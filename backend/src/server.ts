@@ -6,13 +6,17 @@ import dotenv from "dotenv";
 import express from "express";
 import { Server } from "socket.io";
 import {
-  createRoom,
+  createPrivateRoom,
   getRoomState,
   joinRoom,
+  joinOrCreateMatchmakingRoom,
+  listGames,
   removeMemberFromAllRooms,
   removeMemberFromRoom,
+  sanitizeGameId,
   sanitizeNickname,
-  sanitizeSocketId
+  sanitizeSocketId,
+  submitHandCricketChoice
 } from "./rooms.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,11 +53,22 @@ function emitRoomState(code: string) {
 
   if (roomState) {
     io.to(roomState.code).emit("room-state", roomState);
+
+    if (roomState.status === "in-game") {
+      io.to(roomState.code).emit("match-ready", {
+        code: roomState.code,
+        gameId: roomState.gameId
+      });
+    }
   }
 }
 
 app.get("/health", (_request, response) => {
   response.json({ ok: true });
+});
+
+app.get("/games", (_request, response) => {
+  response.json({ games: listGames() });
 });
 
 app.post("/rooms", (request, response) => {
@@ -65,7 +80,37 @@ app.post("/rooms", (request, response) => {
     return;
   }
 
-  const roomState = createRoom({ nickname, socketId });
+  const roomState = createPrivateRoom("hand-cricket", { nickname, socketId });
+  const socket = io.sockets.sockets.get(socketId);
+
+  if (socket) {
+    socket.join(roomState.code);
+  }
+
+  response.status(201).json(roomState);
+});
+
+app.post("/games/:gameId/rooms", (request, response) => {
+  const gameId = sanitizeGameId(request.params.gameId);
+  const nickname = sanitizeNickname(request.body?.nickname);
+  const socketId = sanitizeSocketId(request.body?.socketId);
+
+  if (!gameId) {
+    response.status(404).json({ error: "Game not found." });
+    return;
+  }
+
+  if (gameId !== "hand-cricket") {
+    response.status(400).json({ error: "This game is not ready yet." });
+    return;
+  }
+
+  if (!nickname || !socketId) {
+    response.status(400).json({ error: "Nickname and socketId are required." });
+    return;
+  }
+
+  const roomState = createPrivateRoom(gameId, { nickname, socketId });
   const socket = io.sockets.sockets.get(socketId);
 
   if (socket) {
@@ -96,6 +141,49 @@ io.on("connection", (socket) => {
     }
 
     socket.join(roomState.code);
+    emitRoomState(roomState.code);
+    callback?.({ ok: true, room: roomState });
+  });
+
+  socket.on("join-matchmaking", (payload, callback) => {
+    const gameId = sanitizeGameId(payload?.gameId);
+    const nickname = sanitizeNickname(payload?.nickname);
+
+    if (!gameId || !nickname) {
+      callback?.({ ok: false, reason: "invalid-request" });
+      return;
+    }
+
+    if (gameId !== "hand-cricket") {
+      callback?.({ ok: false, reason: "game-not-ready" });
+      return;
+    }
+
+    const roomState = joinOrCreateMatchmakingRoom(gameId, {
+      socketId: socket.id,
+      nickname
+    });
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "matchmaking-failed" });
+      return;
+    }
+
+    socket.join(roomState.code);
+    emitRoomState(roomState.code);
+    callback?.({ ok: true, room: roomState });
+  });
+
+  socket.on("hand-cricket-choice", (payload, callback) => {
+    const code = typeof payload?.code === "string" ? payload.code : "";
+    const choice = Number(payload?.choice);
+    const roomState = submitHandCricketChoice(code, socket.id, choice);
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "invalid-choice" });
+      return;
+    }
+
     io.to(roomState.code).emit("room-state", roomState);
     callback?.({ ok: true, room: roomState });
   });

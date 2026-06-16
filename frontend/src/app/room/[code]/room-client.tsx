@@ -1,23 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NicknameScreen } from "../../components/NicknameScreen";
 import {
   clearBackbenchStorage,
   ResetButton
 } from "../../components/ResetButton";
 import { ensureSocketConnected, getSocket } from "../../../lib/socket";
-
-type Member = {
-  socketId: string;
-  nickname: string;
-};
-
-type RoomState = {
-  code: string;
-  members: Member[];
-};
+import type { RoomState } from "../../../lib/types";
 
 type JoinResponse =
   | {
@@ -35,6 +26,7 @@ type RoomClientProps = {
 
 export function RoomClient({ code }: RoomClientProps) {
   const router = useRouter();
+  const isNavigatingToPlay = useRef(false);
   const [nickname, setNickname] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
@@ -60,6 +52,11 @@ export function RoomClient({ code }: RoomClientProps) {
       if (nextRoomState.code === code) {
         setRoomState(nextRoomState);
         setStatus("joined");
+
+        if (nextRoomState.status === "in-game") {
+          isNavigatingToPlay.current = true;
+          router.push(`/play/${nextRoomState.code}`);
+        }
       }
     }
 
@@ -88,6 +85,11 @@ export function RoomClient({ code }: RoomClientProps) {
 
             setRoomState(response.room);
             setStatus("joined");
+
+            if (response.room.status === "in-game") {
+              isNavigatingToPlay.current = true;
+              router.push(`/play/${response.room.code}`);
+            }
           }
         );
       } catch (caughtError) {
@@ -106,11 +108,15 @@ export function RoomClient({ code }: RoomClientProps) {
     return () => {
       didCancel = true;
       socket.off("room-state", handleRoomState);
-      socket.emit("leave-room", { code });
+
+      if (!isNavigatingToPlay.current) {
+        socket.emit("leave-room", { code });
+      }
     };
   }, [code, nickname]);
 
   function resetMemory() {
+    isNavigatingToPlay.current = false;
     clearBackbenchStorage();
     setNickname(null);
     setRoomState(null);
@@ -130,7 +136,7 @@ export function RoomClient({ code }: RoomClientProps) {
   if (status === "not-found") {
     return (
       <main className="page">
-        <ResetButton onReset={resetMemory} />
+        <ResetButton nickname={nickname} onReset={resetMemory} />
         <section className="panel stack">
           <h1 className="title">Room not found</h1>
           <p className="muted">No room exists for {code}.</p>
@@ -141,19 +147,26 @@ export function RoomClient({ code }: RoomClientProps) {
 
   return (
     <main className="page">
-      <ResetButton onReset={resetMemory} />
+      <ResetButton nickname={nickname} onReset={resetMemory} />
       <section className="panel stack">
         <h1 className="title">Room {code}</h1>
+        {roomState ? <p className="muted">{roomState.gameName}</p> : null}
         {error ? <p className="error">{error}</p> : null}
         {!roomState ? <p className="muted">Joining...</p> : null}
         {roomState ? (
-          <ul className="members">
-            {roomState.members.map((member) => (
-              <li className="member" key={member.socketId}>
-                {member.nickname}
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="muted">
+              Waiting for players: {roomState.members.length}/
+              {roomState.capacity}
+            </p>
+            <ul className="members">
+              {roomState.members.map((member) => (
+                <li className="member" key={member.socketId}>
+                  {member.nickname}
+                </li>
+              ))}
+            </ul>
+          </>
         ) : null}
       </section>
     </main>

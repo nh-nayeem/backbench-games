@@ -1,6 +1,7 @@
 "use client";
 
 type ResetButtonProps = {
+  nickname?: string | null;
   onReset: () => void;
 };
 
@@ -12,10 +13,13 @@ export function clearBackbenchStorage() {
   }
 }
 
-export function ResetButton({ onReset }: ResetButtonProps) {
+export function ResetButton({ nickname, onReset }: ResetButtonProps) {
   return (
-    <button className="reset-button" onClick={onReset} type="button">
-      Reset
-    </button>
+    <div className="user-controls">
+      {nickname ? <span className="top-nickname">{nickname}</span> : null}
+      <button className="reset-button" onClick={onReset} type="button">
+        Reset
+      </button>
+    </div>
   );
 }

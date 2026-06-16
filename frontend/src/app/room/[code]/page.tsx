@@ -1,5 +1,7 @@
 import { RoomClient } from "./room-client";
 
+export const dynamic = "force-dynamic";
+
 type RoomPageProps = {
   params: Promise<{
     code: string;
