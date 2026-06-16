@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NicknameScreen } from "./components/NicknameScreen";
+import { clearBackbenchStorage, ResetButton } from "./components/ResetButton";
 import { backendUrl } from "../lib/config";
 import { ensureSocketConnected } from "../lib/socket";
 
@@ -59,6 +60,14 @@ export default function HomePage() {
     }
   }
 
+  function resetMemory() {
+    clearBackbenchStorage();
+    setNickname(null);
+    setIsCreating(false);
+    setError("");
+    router.push("/");
+  }
+
   if (!isReady) {
     return null;
   }
@@ -69,6 +78,7 @@ export default function HomePage() {
 
   return (
     <main className="page">
+      <ResetButton onReset={resetMemory} />
       <section className="panel stack">
         <button className="button" disabled={isCreating} onClick={createRoom}>
           {isCreating ? "Creating..." : "Create Room"}

@@ -1,6 +1,8 @@
 import http from "node:http";
-import "dotenv/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cors from "cors";
+import dotenv from "dotenv";
 import express from "express";
 import { Server } from "socket.io";
 import {
@@ -12,6 +14,12 @@ import {
   sanitizeNickname,
   sanitizeSocketId
 } from "./rooms.js";
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
+
+dotenv.config({
+  path: path.resolve(dirname, "../.env")
+});
 
 const isDev = process.env.DEV === "true";
 const port = Number(process.env.PORT ?? 4000);

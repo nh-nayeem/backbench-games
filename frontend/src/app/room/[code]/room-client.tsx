@@ -1,7 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NicknameScreen } from "../../components/NicknameScreen";
+import {
+  clearBackbenchStorage,
+  ResetButton
+} from "../../components/ResetButton";
 import { ensureSocketConnected, getSocket } from "../../../lib/socket";
 
 type Member = {
@@ -29,6 +34,7 @@ type RoomClientProps = {
 };
 
 export function RoomClient({ code }: RoomClientProps) {
+  const router = useRouter();
   const [nickname, setNickname] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
@@ -104,6 +110,15 @@ export function RoomClient({ code }: RoomClientProps) {
     };
   }, [code, nickname]);
 
+  function resetMemory() {
+    clearBackbenchStorage();
+    setNickname(null);
+    setRoomState(null);
+    setStatus("joining");
+    setError("");
+    router.push("/");
+  }
+
   if (!isReady) {
     return null;
   }
@@ -115,6 +130,7 @@ export function RoomClient({ code }: RoomClientProps) {
   if (status === "not-found") {
     return (
       <main className="page">
+        <ResetButton onReset={resetMemory} />
         <section className="panel stack">
           <h1 className="title">Room not found</h1>
           <p className="muted">No room exists for {code}.</p>
@@ -125,6 +141,7 @@ export function RoomClient({ code }: RoomClientProps) {
 
   return (
     <main className="page">
+      <ResetButton onReset={resetMemory} />
       <section className="panel stack">
         <h1 className="title">Room {code}</h1>
         {error ? <p className="error">{error}</p> : null}
