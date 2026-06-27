@@ -8,7 +8,7 @@ import {
   ResetButton
 } from "../../components/ResetButton";
 import { ensureSocketConnected, getSocket } from "../../../lib/socket";
-import type { RoomState } from "../../../lib/types";
+import type { DotsAndBoxesEdge, RoomState } from "../../../lib/types";
 
 type JoinResponse =
   | {
@@ -30,6 +30,8 @@ type ChoiceResponse =
       reason: string;
     };
 
+type DotsAndBoxesResponse = ChoiceResponse;
+
 type PlayClientProps = {
   code: string;
 };
@@ -43,6 +45,18 @@ const handChoices = [
   { value: 6, icon: "👍" }
 ];
 
+function edgeKey(edge: DotsAndBoxesEdge) {
+  return `${edge.orientation}:${edge.row}:${edge.col}`;
+}
+
+function getDotsPlayerInitial(nickname: string) {
+  if (nickname === "Notebook Bot") {
+    return "C";
+  }
+
+  return nickname.trim().charAt(0).toUpperCase() || "P";
+}
+
 export function PlayClient({ code }: PlayClientProps) {
   const router = useRouter();
   const [nickname, setNickname] = useState<string | null>(null);
@@ -53,11 +67,13 @@ export function PlayClient({ code }: PlayClientProps) {
     "joining"
   );
   const [pendingChoice, setPendingChoice] = useState<number | null>(null);
+  const [pendingDotsEdge, setPendingDotsEdge] = useState<string | null>(null);
   const revealedBallKey = useRef("");
   const [showReveal, setShowReveal] = useState(false);
   const [error, setError] = useState("");
 
   const handCricket = roomState?.handCricket ?? null;
+  const dotsAndBoxes = roomState?.dotsAndBoxes ?? null;
   const batter = roomState?.members.find(
     (member) => member.socketId === handCricket?.batterSocketId
   );
@@ -124,6 +140,7 @@ export function PlayClient({ code }: PlayClientProps) {
         setRoomState(nextRoomState);
         setStatus("joined");
         setPendingChoice(null);
+        setPendingDotsEdge(null);
       }
     }
 
@@ -216,6 +233,37 @@ export function PlayClient({ code }: PlayClientProps) {
     );
   }
 
+  function submitDotsAndBoxesEdge(edge: DotsAndBoxesEdge) {
+    const nextPendingEdge = edgeKey(edge);
+    setPendingDotsEdge(nextPendingEdge);
+    setError("");
+
+    getSocket().emit(
+      "dots-and-boxes-edge",
+      { code, edge },
+      (response: DotsAndBoxesResponse) => {
+        if (!response.ok) {
+          setPendingDotsEdge(null);
+          setError("Could not claim that line.");
+        }
+      }
+    );
+  }
+
+  function playAgainDotsAndBoxes() {
+    setError("");
+
+    getSocket().emit(
+      "dots-and-boxes-play-again",
+      { code },
+      (response: DotsAndBoxesResponse) => {
+        if (!response.ok) {
+          setError("Could not start a new game.");
+        }
+      }
+    );
+  }
+
   if (!isReady) {
     return null;
   }
@@ -232,6 +280,242 @@ export function PlayClient({ code }: PlayClientProps) {
           <h1 className="title">Game not found</h1>
           <p className="muted">No active game exists for {code}.</p>
         </section>
+      </main>
+    );
+  }
+
+  if (roomState?.gameId === "dots-and-boxes") {
+    const boardSize = dotsAndBoxes?.boardSize ?? 5;
+    const dotCount = boardSize + 1;
+    const dotGap = 84;
+    const boardPadding = 28;
+    const boardExtent = boardPadding * 2 + boardSize * dotGap;
+    const claimedEdges = new Map(
+      dotsAndBoxes?.edges.map((edge) => [edgeKey(edge), edge]) ?? []
+    );
+    const claimedBoxes = new Map(
+      dotsAndBoxes?.boxes.map((box) => [`${box.row}:${box.col}`, box]) ?? []
+    );
+    const myPlayerIndex = dotsAndBoxes?.players.findIndex(
+      (player) => player.socketId === socketId
+    );
+    const isMyTurn =
+      dotsAndBoxes?.status === "playing" &&
+      myPlayerIndex === dotsAndBoxes.currentPlayerIndex;
+    const currentPlayer = dotsAndBoxes
+      ? dotsAndBoxes.players[dotsAndBoxes.currentPlayerIndex]
+      : null;
+    const disconnectedPlayer =
+      dotsAndBoxes?.disconnectedPlayerIndex === 0 ||
+      dotsAndBoxes?.disconnectedPlayerIndex === 1
+        ? dotsAndBoxes.players[dotsAndBoxes.disconnectedPlayerIndex]
+        : null;
+    const finalMessage =
+      dotsAndBoxes?.status === "finished"
+        ? dotsAndBoxes.resultText ??
+          (dotsAndBoxes.winnerIndex === null
+            ? "Game drawn."
+            : `${dotsAndBoxes.players[dotsAndBoxes.winnerIndex].nickname} wins.`)
+        : null;
+
+    const horizontalEdges = Array.from({ length: dotCount }, (_row, row) =>
+      Array.from({ length: boardSize }, (_col, col) => ({
+        orientation: "horizontal" as const,
+        row,
+        col
+      }))
+    ).flat();
+    const verticalEdges = Array.from({ length: boardSize }, (_row, row) =>
+      Array.from({ length: dotCount }, (_col, col) => ({
+        orientation: "vertical" as const,
+        row,
+        col
+      }))
+    ).flat();
+
+    return (
+      <main className="page app-page">
+        <ResetButton nickname={nickname} onReset={resetMemory} />
+        <div className="play-shell dots-play-shell">
+          <aside className="paper-note play-meta-note">
+            <div>
+              <h1 className="title">Dots & Boxes</h1>
+              <p className="muted">Room {code}</p>
+            </div>
+
+            {error ? <p className="error">{error}</p> : null}
+            {!roomState || !dotsAndBoxes ? (
+              <p className="muted">Loading game...</p>
+            ) : null}
+
+            {dotsAndBoxes ? (
+              <>
+              <div className="dots-scoreboard">
+                {dotsAndBoxes.players.map((player, index) => (
+                  <div
+                    className={
+                      index === dotsAndBoxes.currentPlayerIndex &&
+                      dotsAndBoxes.status === "playing"
+                        ? "dots-player dots-player-active"
+                        : "dots-player"
+                    }
+                    key={player.socketId}
+                  >
+                    <span className="score-label">
+                      {player.socketId === socketId ? "You" : "Opponent"}
+                    </span>
+                    <strong>
+                      {player.nickname} ({getDotsPlayerInitial(player.nickname)})
+                      {!player.connected ? " (disconnected)" : ""}
+                    </strong>
+                    <span>{dotsAndBoxes.scores[index]} box(es)</span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="result">
+                {dotsAndBoxes.status === "paused" && disconnectedPlayer
+                  ? `${disconnectedPlayer.nickname} disconnected. Waiting for them to reconnect.`
+                  : dotsAndBoxes.status === "finished"
+                    ? finalMessage
+                    : isMyTurn
+                      ? "Your turn. Claim a line."
+                    : `${currentPlayer?.nickname ?? "Player"}'s turn.`}
+              </p>
+              </>
+            ) : null}
+          </aside>
+
+          <section className="panel stack wide-panel play-panel dots-game-panel">
+            {dotsAndBoxes ? (
+              <>
+
+              <div className="dots-paper">
+                <svg
+                  aria-label="Dots and Boxes board"
+                  className="dots-board"
+                  role="img"
+                  viewBox={`0 0 ${boardExtent} ${boardExtent}`}
+                >
+                  {Array.from({ length: boardSize }, (_boxRow, row) =>
+                    Array.from({ length: boardSize }, (_boxCol, col) => {
+                      const box = claimedBoxes.get(`${row}:${col}`);
+
+                      return box ? (
+                        <g key={`box:${row}:${col}`}>
+                          <rect
+                            className={
+                              dotsAndBoxes.players[box.ownerIndex].socketId ===
+                              socketId
+                                ? "dots-box dots-box-mine"
+                                : "dots-box dots-box-opponent"
+                            }
+                            height={dotGap - 10}
+                            rx="8"
+                            width={dotGap - 10}
+                            x={boardPadding + col * dotGap + 5}
+                            y={boardPadding + row * dotGap + 5}
+                          />
+                          <text
+                            className={
+                              dotsAndBoxes.players[box.ownerIndex].socketId ===
+                              socketId
+                                ? "dots-box-initial dots-box-initial-mine"
+                                : "dots-box-initial dots-box-initial-opponent"
+                            }
+                            dominantBaseline="middle"
+                            textAnchor="middle"
+                            x={boardPadding + col * dotGap + dotGap / 2}
+                            y={boardPadding + row * dotGap + dotGap / 2 + 2}
+                          >
+                            {getDotsPlayerInitial(
+                              dotsAndBoxes.players[box.ownerIndex].nickname
+                            )}
+                          </text>
+                        </g>
+                      ) : null;
+                    })
+                  )}
+
+                  {[...horizontalEdges, ...verticalEdges].map((edge) => {
+                    const claimedEdge = claimedEdges.get(edgeKey(edge));
+                    const x1 =
+                      boardPadding +
+                      edge.col * dotGap;
+                    const y1 =
+                      boardPadding +
+                      edge.row * dotGap;
+                    const x2 =
+                      edge.orientation === "horizontal" ? x1 + dotGap : x1;
+                    const y2 =
+                      edge.orientation === "vertical" ? y1 + dotGap : y1;
+
+                    if (claimedEdge) {
+                      return (
+                        <line
+                          className={`dots-edge dots-edge-player-${claimedEdge.ownerIndex}`}
+                          key={edgeKey(edge)}
+                          x1={x1}
+                          x2={x2}
+                          y1={y1}
+                          y2={y2}
+                        />
+                      );
+                    }
+
+                    return (
+                      <line
+                        className="dots-edge-hit"
+                        key={edgeKey(edge)}
+                        onClick={() => {
+                          if (!isMyTurn || pendingDotsEdge) {
+                            return;
+                          }
+
+                          submitDotsAndBoxesEdge(edge);
+                        }}
+                        opacity={isMyTurn && !pendingDotsEdge ? 1 : 0}
+                        pointerEvents={
+                          isMyTurn && !pendingDotsEdge ? "stroke" : "none"
+                        }
+                        x1={x1}
+                        x2={x2}
+                        y1={y1}
+                        y2={y2}
+                      />
+                    );
+                  })}
+
+                  {Array.from({ length: dotCount }, (_dotRow, row) =>
+                    Array.from({ length: dotCount }, (_dotCol, col) => (
+                      <circle
+                        className="dots-dot"
+                        cx={boardPadding + col * dotGap}
+                        cy={boardPadding + row * dotGap}
+                        key={`dot:${row}:${col}`}
+                        r="7"
+                      />
+                    ))
+                  )}
+                </svg>
+              </div>
+
+              {dotsAndBoxes.status === "finished" ? (
+                <div className="dots-final">
+                  <h2>{finalMessage}</h2>
+                  <button
+                    className="button"
+                    onClick={playAgainDotsAndBoxes}
+                    type="button"
+                  >
+                    Play Again
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          </section>
+        </div>
       </main>
     );
   }
@@ -292,17 +576,20 @@ export function PlayClient({ code }: PlayClientProps) {
           </div>
         </div>
       ) : null}
-      <section className="panel stack wide-panel play-panel">
-        <div>
-          <h1 className="title">Hand Cricket</h1>
-          <p className="muted">Room {code}</p>
-        </div>
+      <div className="play-shell">
+        <aside className="paper-note play-meta-note">
+          <div>
+            <h1 className="title">Hand Cricket</h1>
+            <p className="muted">Room {code}</p>
+          </div>
 
-        {error ? <p className="error">{error}</p> : null}
-        {!roomState || !handCricket ? <p className="muted">Loading game...</p> : null}
+          {error ? <p className="error">{error}</p> : null}
+          {!roomState || !handCricket ? (
+            <p className="muted">Loading game...</p>
+          ) : null}
 
-        {roomState && handCricket ? (
-          <>
+          {roomState && handCricket ? (
+            <>
             <div className="score-grid">
               <div className="score-box">
                 <span className="score-label">Innings</span>
@@ -347,6 +634,15 @@ export function PlayClient({ code }: PlayClientProps) {
 
             {roomState.status === "finished" ? (
               <p className="result">{handCricket.resultText}</p>
+            ) : null}
+            </>
+          ) : null}
+        </aside>
+
+        <section className="panel stack wide-panel play-panel play-stage-panel">
+          {roomState && handCricket ? (
+            roomState.status === "finished" ? (
+              <p className="result">{handCricket.resultText}</p>
             ) : (
               <>
                 <div
@@ -375,10 +671,12 @@ export function PlayClient({ code }: PlayClientProps) {
                   <p className="muted">Choice locked. Waiting for opponent...</p>
                 ) : null}
               </>
-            )}
-          </>
-        ) : null}
-      </section>
+            )
+          ) : (
+            <p className="muted">Loading game...</p>
+          )}
+        </section>
+      </div>
     </main>
   );
 }

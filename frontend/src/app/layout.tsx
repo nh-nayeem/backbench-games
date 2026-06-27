@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DeskDoodles } from "./components/DeskDoodles";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <DeskDoodles />
+        {children}
+      </body>
     </html>
   );
 }

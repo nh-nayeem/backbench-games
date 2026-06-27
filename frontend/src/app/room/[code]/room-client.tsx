@@ -135,7 +135,7 @@ export function RoomClient({ code }: RoomClientProps) {
 
   if (status === "not-found") {
     return (
-      <main className="page">
+      <main className="page app-page">
         <ResetButton nickname={nickname} onReset={resetMemory} />
         <section className="panel stack">
           <h1 className="title">Room not found</h1>
@@ -146,27 +146,49 @@ export function RoomClient({ code }: RoomClientProps) {
   }
 
   return (
-    <main className="page">
+    <main className="page app-page">
       <ResetButton nickname={nickname} onReset={resetMemory} />
-      <section className="panel stack">
-        <h1 className="title">Room {code}</h1>
-        {roomState ? <p className="muted">{roomState.gameName}</p> : null}
+      <section className="room-board">
+        <header className="desk-title">
+          <h1>Backbench Games</h1>
+          <p>Just share and play!</p>
+        </header>
+
+        <aside className="paper-note room-info-note">
+          <h2>Room Info</h2>
+          <ul>
+            <li>No inactive room</li>
+            <li>No passwords</li>
+            <li>Just share and play</li>
+          </ul>
+        </aside>
+
+        <section className="paper-note room-code-note stack">
+          <p className="note-heading">Room Code</p>
+          <div className="room-code-box">{code}</div>
+          {roomState ? <p className="muted">{roomState.gameName}</p> : null}
+          <p className="muted">Share this link with your friends</p>
+        </section>
+
         {error ? <p className="error">{error}</p> : null}
-        {!roomState ? <p className="muted">Joining...</p> : null}
+        {!roomState ? <p className="paper-note muted">Joining...</p> : null}
         {roomState ? (
-          <>
-            <p className="muted">
-              Waiting for players: {roomState.members.length}/
-              {roomState.capacity}
-            </p>
+          <section className="paper-note members-note stack">
+            <div className="members-heading">
+              <h2>Members ({roomState.members.length})</h2>
+              <span>
+                {roomState.members.length}/{roomState.capacity}
+              </span>
+            </div>
             <ul className="members">
               {roomState.members.map((member) => (
                 <li className="member" key={member.socketId}>
-                  {member.nickname}
+                  <span>{member.nickname}</span>
+                  <strong>Online</strong>
                 </li>
               ))}
             </ul>
-          </>
+          </section>
         ) : null}
       </section>
     </main>

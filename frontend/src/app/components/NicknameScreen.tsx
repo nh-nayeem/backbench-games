@@ -25,9 +25,13 @@ export function NicknameScreen({ onSave }: NicknameScreenProps) {
   }
 
   return (
-    <main className="page">
-      <form className="panel stack" onSubmit={handleSubmit}>
-        <h1 className="title">Backbench Games</h1>
+    <main className="page app-page">
+      <form className="panel stack nickname-panel" onSubmit={handleSubmit}>
+        <header className="lobby-header">
+          <p className="eyebrow">Class timepass</p>
+          <h1 className="hero-title">Backbench Games</h1>
+          <p className="muted">Write your name on the desk.</p>
+        </header>
         <label className="label">
           Nickname
           <input

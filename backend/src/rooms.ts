@@ -1,4 +1,14 @@
 import { randomInt } from "node:crypto";
+import {
+  applyDotsAndBoxesMove,
+  createDotsAndBoxesState,
+  getAvailableDotsAndBoxesEdges,
+  getCompletingDotsAndBoxesEdges,
+  pauseDotsAndBoxesPlayer,
+  reconnectDotsAndBoxesPlayer,
+  resetDotsAndBoxesState,
+  type DotsAndBoxesEdge
+} from "./dotsAndBoxes.js";
 import type {
   GameDefinition,
   GameId,
@@ -11,6 +21,8 @@ import type {
 
 const CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const ROOM_CODE_LENGTH = 4;
+const COMPUTER_SOCKET_ID = "computer:notebook-bot";
+const COMPUTER_NICKNAME = "Notebook Bot";
 
 export const games: Record<GameId, GameDefinition> = {
   "hand-cricket": {
@@ -78,6 +90,18 @@ function toRoomState(code: string, room: Room): RoomState {
             ? { ...room.handCricket.lastBall }
             : null
         }
+      : null,
+    dotsAndBoxes: room.dotsAndBoxes
+      ? {
+          ...room.dotsAndBoxes,
+          players: [
+            { ...room.dotsAndBoxes.players[0] },
+            { ...room.dotsAndBoxes.players[1] }
+          ],
+          edges: room.dotsAndBoxes.edges.map((edge) => ({ ...edge })),
+          boxes: room.dotsAndBoxes.boxes.map((box) => ({ ...box })),
+          scores: [...room.dotsAndBoxes.scores] as [number, number]
+        }
       : null
   };
 }
@@ -102,17 +126,39 @@ function createHandCricketState(members: Member[]) {
   };
 }
 
+function isComputerMember(member: Member) {
+  return member.socketId === COMPUTER_SOCKET_ID;
+}
+
+function getComputerMember() {
+  return {
+    socketId: COMPUTER_SOCKET_ID,
+    nickname: COMPUTER_NICKNAME
+  };
+}
+
 function maybeStartGame(room: Room) {
   if (room.status !== "waiting" || room.members.length < room.capacity) {
     return;
   }
 
-  if (room.gameId !== "hand-cricket") {
-    return;
+  if (room.gameId === "hand-cricket") {
+    room.status = "in-game";
+    room.handCricket = createHandCricketState(room.members);
   }
 
-  room.status = "in-game";
-  room.handCricket = createHandCricketState(room.members);
+  if (room.gameId === "dots-and-boxes") {
+    const players = room.members.map((member) => ({
+      ...member,
+      connected: true
+    }));
+
+    room.status = "in-game";
+    room.dotsAndBoxes = createDotsAndBoxesState([
+      players[0],
+      players[1]
+    ]);
+  }
 }
 
 function getPlayerRole(room: Room, socketId: string): HandCricketPlayerRole | null {
@@ -129,6 +175,26 @@ function getPlayerRole(room: Room, socketId: string): HandCricketPlayerRole | nu
   }
 
   return null;
+}
+
+function replaceSocketIdInHandCricket(room: Room, oldSocketId: string, socketId: string) {
+  const game = room.handCricket;
+
+  if (!game) {
+    return;
+  }
+
+  if (game.batterSocketId === oldSocketId) {
+    game.batterSocketId = socketId;
+  }
+
+  if (game.bowlerSocketId === oldSocketId) {
+    game.bowlerSocketId = socketId;
+  }
+
+  if (game.firstInningsBatterSocketId === oldSocketId) {
+    game.firstInningsBatterSocketId = socketId;
+  }
 }
 
 function getNickname(room: Room, socketId: string) {
@@ -202,6 +268,56 @@ function resolveHandCricketBall(room: Room) {
   }
 }
 
+function submitComputerHandCricketChoice(room: Room) {
+  if (room.mode !== "computer" || !room.handCricket || room.status !== "in-game") {
+    return;
+  }
+
+  const computerRole = getPlayerRole(room, COMPUTER_SOCKET_ID);
+
+  if (computerRole === "batting" && !room.handCricket.submissions.batter) {
+    room.handCricket.submissions.batter = randomInt(1, 7);
+  }
+
+  if (computerRole === "bowling" && !room.handCricket.submissions.bowler) {
+    room.handCricket.submissions.bowler = randomInt(1, 7);
+  }
+
+  resolveHandCricketBall(room);
+}
+
+function submitComputerDotsAndBoxesMoves(room: Room) {
+  if (room.mode !== "computer" || !room.dotsAndBoxes) {
+    return;
+  }
+
+  while (
+    room.dotsAndBoxes.status === "playing" &&
+    room.dotsAndBoxes.players[room.dotsAndBoxes.currentPlayerIndex].socketId ===
+      COMPUTER_SOCKET_ID
+  ) {
+    const completingEdges = getCompletingDotsAndBoxesEdges(room.dotsAndBoxes);
+    const availableEdges =
+      completingEdges.length > 0
+        ? completingEdges
+        : getAvailableDotsAndBoxesEdges(room.dotsAndBoxes);
+
+    if (availableEdges.length === 0) {
+      return;
+    }
+
+    const edge = availableEdges[randomInt(availableEdges.length)];
+
+    if (!applyDotsAndBoxesMove(room.dotsAndBoxes, COMPUTER_SOCKET_ID, edge)) {
+      return;
+    }
+  }
+
+  if (room.dotsAndBoxes.status === "finished") {
+    room.status = "finished";
+  }
+}
+
 export function sanitizeNickname(nickname: unknown) {
   if (typeof nickname !== "string") {
     return "";
@@ -240,7 +356,8 @@ export function createRoom(gameId: GameId, mode: RoomMode, creator: Member) {
     status: "waiting",
     capacity: game.maxPlayers,
     members: [creator],
-    handCricket: null
+    handCricket: null,
+    dotsAndBoxes: null
   });
 
   return toRoomState(code, rooms.get(code)!);
@@ -248,6 +365,23 @@ export function createRoom(gameId: GameId, mode: RoomMode, creator: Member) {
 
 export function createPrivateRoom(gameId: GameId, creator: Member) {
   return createRoom(gameId, "private", creator);
+}
+
+export function createComputerRoom(gameId: GameId, creator: Member) {
+  const roomState = createRoom(gameId, "computer", creator);
+  const normalizedCode = normalizeCode(roomState.code);
+  const room = rooms.get(normalizedCode);
+
+  if (!room) {
+    return roomState;
+  }
+
+  room.members.push(getComputerMember());
+  maybeStartGame(room);
+  submitComputerHandCricketChoice(room);
+  submitComputerDotsAndBoxesMoves(room);
+
+  return toRoomState(normalizedCode, room);
 }
 
 export function getRoomState(code: string) {
@@ -275,7 +409,41 @@ export function joinRoom(code: string, member: Member) {
 
   if (existingMember) {
     existingMember.nickname = member.nickname;
+  } else if (room.mode === "computer") {
+    const humanMember = room.members.find(
+      (roomMember) =>
+        !isComputerMember(roomMember) && roomMember.nickname === member.nickname
+    );
+
+    if (!humanMember) {
+      return null;
+    }
+
+    const oldSocketId = humanMember.socketId;
+    humanMember.socketId = member.socketId;
+    replaceSocketIdInHandCricket(room, oldSocketId, member.socketId);
+
+    if (room.dotsAndBoxes) {
+      const humanPlayer = room.dotsAndBoxes.players.find(
+        (player) => player.socketId === oldSocketId
+      );
+
+      if (humanPlayer) {
+        humanPlayer.socketId = member.socketId;
+        humanPlayer.connected = true;
+      }
+    }
+  } else if (
+    room.gameId === "dots-and-boxes" &&
+    room.dotsAndBoxes &&
+    reconnectDotsAndBoxesPlayer(room.dotsAndBoxes, member.nickname, member.socketId)
+  ) {
+    room.members.push(member);
   } else {
+    if (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) {
+      return null;
+    }
+
     if (room.members.length >= room.capacity) {
       return null;
     }
@@ -323,6 +491,10 @@ export function submitHandCricketChoice(
 
   const role = getPlayerRole(room, socketId);
 
+  if (!role) {
+    return null;
+  }
+
   if (role === "batting") {
     room.handCricket.submissions.batter = choice;
   }
@@ -331,7 +503,55 @@ export function submitHandCricketChoice(
     room.handCricket.submissions.bowler = choice;
   }
 
+  submitComputerHandCricketChoice(room);
   resolveHandCricketBall(room);
+
+  return toRoomState(normalizedCode, room);
+}
+
+export function submitDotsAndBoxesEdge(
+  code: string,
+  socketId: string,
+  edge: DotsAndBoxesEdge
+) {
+  const normalizedCode = normalizeCode(code);
+  const room = rooms.get(normalizedCode);
+
+  if (
+    !room ||
+    room.gameId !== "dots-and-boxes" ||
+    !room.dotsAndBoxes ||
+    !applyDotsAndBoxesMove(room.dotsAndBoxes, socketId, edge)
+  ) {
+    return null;
+  }
+
+  submitComputerDotsAndBoxesMoves(room);
+
+  if (room.dotsAndBoxes.status === "finished") {
+    room.status = "finished";
+  }
+
+  return toRoomState(normalizedCode, room);
+}
+
+export function playAgainDotsAndBoxes(code: string, socketId: string) {
+  const normalizedCode = normalizeCode(code);
+  const room = rooms.get(normalizedCode);
+
+  if (
+    !room ||
+    room.gameId !== "dots-and-boxes" ||
+    !room.dotsAndBoxes ||
+    room.dotsAndBoxes.status !== "finished" ||
+    !room.dotsAndBoxes.players.every((player) => player.connected) ||
+    !room.dotsAndBoxes.players.some((player) => player.socketId === socketId)
+  ) {
+    return null;
+  }
+
+  room.status = "in-game";
+  room.dotsAndBoxes = resetDotsAndBoxesState(room.dotsAndBoxes);
 
   return toRoomState(normalizedCode, room);
 }
@@ -346,9 +566,19 @@ export function removeMemberFromRoom(code: string, socketId: string) {
 
   room.members = room.members.filter((member) => member.socketId !== socketId);
 
+  if (room.mode === "computer") {
+    rooms.delete(normalizedCode);
+    return null;
+  }
+
   if (room.members.length === 0) {
     rooms.delete(normalizedCode);
     return null;
+  }
+
+  if (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) {
+    pauseDotsAndBoxesPlayer(room.dotsAndBoxes, socketId);
+    return toRoomState(normalizedCode, room);
   }
 
   if (room.status === "in-game" && !room.handCricket?.winnerSocketId) {
@@ -376,9 +606,21 @@ export function removeMemberFromAllRooms(socketId: string) {
       continue;
     }
 
+    if (room.mode === "computer") {
+      rooms.delete(code);
+      deletedRoomCodes.push(code);
+      continue;
+    }
+
     if (room.members.length === 0) {
       rooms.delete(code);
       deletedRoomCodes.push(code);
+      continue;
+    }
+
+    if (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) {
+      pauseDotsAndBoxesPlayer(room.dotsAndBoxes, socketId);
+      updatedRooms.push(toRoomState(code, room));
       continue;
     }
 

@@ -1,3 +1,5 @@
+import type { DotsAndBoxesState } from "./dotsAndBoxes.js";
+
 export type Member = {
   socketId: string;
   nickname: string;
@@ -5,7 +7,7 @@ export type Member = {
 
 export type GameId = "hand-cricket" | "dots-and-boxes";
 
-export type RoomMode = "private" | "matchmaking";
+export type RoomMode = "private" | "matchmaking" | "computer";
 
 export type RoomStatus = "waiting" | "in-game" | "finished";
 
@@ -49,6 +51,7 @@ export type Room = {
   capacity: number;
   members: Member[];
   handCricket: HandCricketState | null;
+  dotsAndBoxes: DotsAndBoxesState | null;
 };
 
 export type RoomState = {
@@ -60,4 +63,5 @@ export type RoomState = {
   capacity: number;
   members: Member[];
   handCricket: HandCricketState | null;
+  dotsAndBoxes: DotsAndBoxesState | null;
 };

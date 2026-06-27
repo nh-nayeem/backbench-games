@@ -146,6 +146,43 @@ export default function HomePage() {
     }
   }
 
+  async function playComputer(gameId: GameId) {
+    if (!nickname) {
+      return;
+    }
+
+    setPendingAction(`${gameId}:computer`);
+    setError("");
+
+    try {
+      const socket = await ensureSocketConnected();
+      const response = await fetch(`${backendUrl}/games/${gameId}/computer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          nickname,
+          socketId: socket.id
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not start computer match.");
+      }
+
+      const room = (await response.json()) as RoomResponse;
+      router.push(`/play/${room.code}`);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not start computer match."
+      );
+      setPendingAction(null);
+    }
+  }
+
   function resetMemory() {
     clearBackbenchStorage();
     setNickname(null);
@@ -174,9 +211,9 @@ export default function HomePage() {
         </header>
         <div className="game-grid">
           {games.map((game) => {
-            const isReadyGame = game.id === "hand-cricket";
             const isCreating = pendingAction === `${game.id}:create`;
             const isMatchmaking = pendingAction === `${game.id}:online`;
+            const isComputer = pendingAction === `${game.id}:computer`;
 
             return (
               <article className="game-card" key={game.id}>
@@ -190,26 +227,29 @@ export default function HomePage() {
                       {game.minPlayers}-{game.maxPlayers} players
                     </p>
                   </div>
-                  {isReadyGame ? (
-                    <div className="button-row">
-                      <button
-                        className="button"
-                        disabled={Boolean(pendingAction)}
-                        onClick={() => createRoom(game.id)}
-                      >
-                        {isCreating ? "Creating..." : "Create Room"}
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={Boolean(pendingAction)}
-                        onClick={() => playOnline(game.id)}
-                      >
-                        {isMatchmaking ? "Waiting..." : "Play Online"}
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="muted">Coming soon</p>
-                  )}
+                  <div className="button-row">
+                    <button
+                      className="button"
+                      disabled={Boolean(pendingAction)}
+                      onClick={() => createRoom(game.id)}
+                    >
+                      {isCreating ? "Creating..." : "Create Room"}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={Boolean(pendingAction)}
+                      onClick={() => playOnline(game.id)}
+                    >
+                      {isMatchmaking ? "Waiting..." : "Play Online"}
+                    </button>
+                    <button
+                      className="secondary-button play-computer-button"
+                      disabled={Boolean(pendingAction)}
+                      onClick={() => playComputer(game.id)}
+                    >
+                      {isComputer ? "Opening..." : "Play Computer"}
+                    </button>
+                  </div>
                 </div>
               </article>
             );

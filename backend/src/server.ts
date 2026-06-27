@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { Server } from "socket.io";
 import {
+  createComputerRoom,
   createPrivateRoom,
   getRoomState,
   joinRoom,
@@ -13,9 +14,11 @@ import {
   listGames,
   removeMemberFromAllRooms,
   removeMemberFromRoom,
+  playAgainDotsAndBoxes,
   sanitizeGameId,
   sanitizeNickname,
   sanitizeSocketId,
+  submitDotsAndBoxesEdge,
   submitHandCricketChoice
 } from "./rooms.js";
 
@@ -100,8 +103,28 @@ app.post("/games/:gameId/rooms", (request, response) => {
     return;
   }
 
-  if (gameId !== "hand-cricket") {
-    response.status(400).json({ error: "This game is not ready yet." });
+  if (!nickname || !socketId) {
+    response.status(400).json({ error: "Nickname and socketId are required." });
+    return;
+  }
+
+  const roomState = createPrivateRoom(gameId, { nickname, socketId });
+  const socket = io.sockets.sockets.get(socketId);
+
+  if (socket) {
+    socket.join(roomState.code);
+  }
+
+  response.status(201).json(roomState);
+});
+
+app.post("/games/:gameId/computer", (request, response) => {
+  const gameId = sanitizeGameId(request.params.gameId);
+  const nickname = sanitizeNickname(request.body?.nickname);
+  const socketId = sanitizeSocketId(request.body?.socketId);
+
+  if (!gameId) {
+    response.status(404).json({ error: "Game not found." });
     return;
   }
 
@@ -110,7 +133,7 @@ app.post("/games/:gameId/rooms", (request, response) => {
     return;
   }
 
-  const roomState = createPrivateRoom(gameId, { nickname, socketId });
+  const roomState = createComputerRoom(gameId, { nickname, socketId });
   const socket = io.sockets.sockets.get(socketId);
 
   if (socket) {
@@ -154,11 +177,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (gameId !== "hand-cricket") {
-      callback?.({ ok: false, reason: "game-not-ready" });
-      return;
-    }
-
     const roomState = joinOrCreateMatchmakingRoom(gameId, {
       socketId: socket.id,
       nickname
@@ -181,6 +199,44 @@ io.on("connection", (socket) => {
 
     if (!roomState) {
       callback?.({ ok: false, reason: "invalid-choice" });
+      return;
+    }
+
+    io.to(roomState.code).emit("room-state", roomState);
+    callback?.({ ok: true, room: roomState });
+  });
+
+  socket.on("dots-and-boxes-edge", (payload, callback) => {
+    const code = typeof payload?.code === "string" ? payload.code : "";
+    const edge = payload?.edge;
+    const orientation = edge?.orientation;
+
+    if (orientation !== "horizontal" && orientation !== "vertical") {
+      callback?.({ ok: false, reason: "invalid-edge" });
+      return;
+    }
+
+    const roomState = submitDotsAndBoxesEdge(code, socket.id, {
+      orientation,
+      row: Number(edge?.row),
+      col: Number(edge?.col)
+    });
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "invalid-edge" });
+      return;
+    }
+
+    io.to(roomState.code).emit("room-state", roomState);
+    callback?.({ ok: true, room: roomState });
+  });
+
+  socket.on("dots-and-boxes-play-again", (payload, callback) => {
+    const code = typeof payload?.code === "string" ? payload.code : "";
+    const roomState = playAgainDotsAndBoxes(code, socket.id);
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "invalid-request" });
       return;
     }
 
