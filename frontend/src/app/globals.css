@@ -16,7 +16,7 @@ body {
   color: #102449;
   background:
     linear-gradient(rgba(34, 19, 8, 0.08), rgba(34, 19, 8, 0.08)),
-    url("/ChatGPT_background.png"),
+    url("/background_light.png"),
     #8f5f34;
   background-attachment: fixed;
   background-position: center;
@@ -325,6 +325,37 @@ input {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.home-button {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 30;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgba(16, 36, 73, 0.42);
+  border-radius: 6px 4px 7px 5px;
+  background: #fff6d8;
+  color: #102449;
+  box-shadow: 0 6px 16px rgba(50, 24, 6, 0.2);
+  text-decoration: none;
+  transform: rotate(-1.2deg);
+}
+
+.home-button:hover {
+  border-color: #102449;
+}
+
+.home-button-icon {
+  width: 25px;
+  height: 25px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
 }
 
 .top-nickname {
@@ -1030,11 +1061,38 @@ input {
 }
 
 @media (max-width: 640px) {
+  :root {
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      sans-serif;
+  }
+
+  body {
+    background-attachment: scroll;
+  }
+
   .page {
     padding: 72px 16px 24px;
   }
 
-  .panel {
+  .panel,
+  .paper-note,
+  .game-card,
+  .home-button,
+  .top-nickname,
+  .reset-button,
+  .dots-player-active,
+  .hand-wheel-active {
+    box-shadow: none;
+  }
+
+  .panel,
+  .paper-note,
+  .game-card,
+  .home-button,
+  .top-nickname,
+  .reset-button,
+  .dots-player-active {
     transform: rotate(0deg);
   }
 
@@ -1079,8 +1137,21 @@ input {
     font-size: 38px;
   }
 
+  .home-button {
+    top: 14px;
+    left: 12px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .home-button-icon {
+    width: 23px;
+    height: 23px;
+  }
+
   .hand-wheel {
     width: min(100%, 320px);
+    transition: none;
   }
 
   .hand-button {
@@ -1098,6 +1169,12 @@ input {
   }
 
   .dots-paper {
+    background:
+      linear-gradient(90deg, rgba(214, 35, 35, 0.24) 1px, transparent 1px) 40px 0 / 100% 100%,
+      linear-gradient(rgba(16, 36, 73, 0.07) 1px, transparent 1px),
+      #fff9df;
+    background-size: 100% 100%, 100% 28px, auto;
+    box-shadow: none;
     padding: 8px;
   }
 
@@ -1176,5 +1253,15 @@ input {
     width: 6px;
     height: 6px;
     margin-right: 4px;
+  }
+
+  .hand-wheel-active .hand-button,
+  .draw-loader span {
+    animation: none;
+  }
+
+  .hand-button,
+  .dots-edge-hit {
+    transition: none;
   }
 }
