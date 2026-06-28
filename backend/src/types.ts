@@ -1,11 +1,12 @@
 import type { DotsAndBoxesState } from "./dotsAndBoxes.js";
+import type { NumberHuntState } from "./numberHunt.js";
 
 export type Member = {
   socketId: string;
   nickname: string;
 };
 
-export type GameId = "hand-cricket" | "dots-and-boxes";
+export type GameId = "hand-cricket" | "dots-and-boxes" | "number-hunt";
 
 export type RoomMode = "private" | "matchmaking" | "computer";
 
@@ -52,6 +53,7 @@ export type Room = {
   members: Member[];
   handCricket: HandCricketState | null;
   dotsAndBoxes: DotsAndBoxesState | null;
+  numberHunt: NumberHuntState | null;
 };
 
 export type RoomState = {
@@ -64,4 +66,5 @@ export type RoomState = {
   members: Member[];
   handCricket: HandCricketState | null;
   dotsAndBoxes: DotsAndBoxesState | null;
+  numberHunt: NumberHuntState | null;
 };

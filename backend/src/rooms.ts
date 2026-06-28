@@ -9,6 +9,13 @@ import {
   resetDotsAndBoxesState,
   type DotsAndBoxesEdge
 } from "./dotsAndBoxes.js";
+import {
+  applyNumberHuntPick,
+  createNumberHuntState,
+  pauseNumberHuntPlayer,
+  reconnectNumberHuntPlayer,
+  resetNumberHuntState
+} from "./numberHunt.js";
 import type {
   GameDefinition,
   GameId,
@@ -21,7 +28,7 @@ import type {
 
 const CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const ROOM_CODE_LENGTH = 4;
-const COMPUTER_SOCKET_ID = "computer:notebook-bot";
+export const COMPUTER_SOCKET_ID = "computer:notebook-bot";
 const COMPUTER_NICKNAME = "Notebook Bot";
 
 export const games: Record<GameId, GameDefinition> = {
@@ -34,6 +41,12 @@ export const games: Record<GameId, GameDefinition> = {
   "dots-and-boxes": {
     id: "dots-and-boxes",
     name: "Dots and Boxes",
+    minPlayers: 2,
+    maxPlayers: 2
+  },
+  "number-hunt": {
+    id: "number-hunt",
+    name: "Number Hunt",
     minPlayers: 2,
     maxPlayers: 2
   }
@@ -70,7 +83,11 @@ function getGame(gameId: GameId) {
 }
 
 function isSupportedGameId(gameId: string): gameId is GameId {
-  return gameId === "hand-cricket" || gameId === "dots-and-boxes";
+  return (
+    gameId === "hand-cricket" ||
+    gameId === "dots-and-boxes" ||
+    gameId === "number-hunt"
+  );
 }
 
 function toRoomState(code: string, room: Room): RoomState {
@@ -101,6 +118,19 @@ function toRoomState(code: string, room: Room): RoomState {
           edges: room.dotsAndBoxes.edges.map((edge) => ({ ...edge })),
           boxes: room.dotsAndBoxes.boxes.map((box) => ({ ...box })),
           scores: [...room.dotsAndBoxes.scores] as [number, number]
+        }
+      : null,
+    numberHunt: room.numberHunt
+      ? {
+          ...room.numberHunt,
+          players: [
+            { ...room.numberHunt.players[0] },
+            { ...room.numberHunt.players[1] }
+          ],
+          scores: [...room.numberHunt.scores] as [number, number],
+          lastLock: room.numberHunt.lastLock
+            ? { ...room.numberHunt.lastLock }
+            : null
         }
       : null
   };
@@ -155,6 +185,19 @@ function maybeStartGame(room: Room) {
 
     room.status = "in-game";
     room.dotsAndBoxes = createDotsAndBoxesState([
+      players[0],
+      players[1]
+    ]);
+  }
+
+  if (room.gameId === "number-hunt") {
+    const players = room.members.map((member) => ({
+      ...member,
+      connected: true
+    }));
+
+    room.status = "in-game";
+    room.numberHunt = createNumberHuntState([
       players[0],
       players[1]
     ]);
@@ -357,7 +400,8 @@ export function createRoom(gameId: GameId, mode: RoomMode, creator: Member) {
     capacity: game.maxPlayers,
     members: [creator],
     handCricket: null,
-    dotsAndBoxes: null
+    dotsAndBoxes: null,
+    numberHunt: null
   });
 
   return toRoomState(code, rooms.get(code)!);
@@ -433,14 +477,34 @@ export function joinRoom(code: string, member: Member) {
         humanPlayer.connected = true;
       }
     }
+
+    if (room.numberHunt) {
+      const humanPlayer = room.numberHunt.players.find(
+        (player) => player.socketId === oldSocketId
+      );
+
+      if (humanPlayer) {
+        humanPlayer.socketId = member.socketId;
+        humanPlayer.connected = true;
+      }
+    }
   } else if (
     room.gameId === "dots-and-boxes" &&
     room.dotsAndBoxes &&
     reconnectDotsAndBoxesPlayer(room.dotsAndBoxes, member.nickname, member.socketId)
   ) {
     room.members.push(member);
+  } else if (
+    room.gameId === "number-hunt" &&
+    room.numberHunt &&
+    reconnectNumberHuntPlayer(room.numberHunt, member.nickname, member.socketId)
+  ) {
+    room.members.push(member);
   } else {
-    if (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) {
+    if (
+      (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) ||
+      (room.gameId === "number-hunt" && room.numberHunt)
+    ) {
       return null;
     }
 
@@ -556,6 +620,51 @@ export function playAgainDotsAndBoxes(code: string, socketId: string) {
   return toRoomState(normalizedCode, room);
 }
 
+export function submitNumberHuntPick(
+  code: string,
+  socketId: string,
+  selectedNumber: number
+) {
+  const normalizedCode = normalizeCode(code);
+  const room = rooms.get(normalizedCode);
+
+  if (
+    !room ||
+    room.gameId !== "number-hunt" ||
+    !room.numberHunt ||
+    !applyNumberHuntPick(room.numberHunt, socketId, selectedNumber)
+  ) {
+    return null;
+  }
+
+  if (room.numberHunt.status === "finished") {
+    room.status = "finished";
+  }
+
+  return toRoomState(normalizedCode, room);
+}
+
+export function playAgainNumberHunt(code: string, socketId: string) {
+  const normalizedCode = normalizeCode(code);
+  const room = rooms.get(normalizedCode);
+
+  if (
+    !room ||
+    room.gameId !== "number-hunt" ||
+    !room.numberHunt ||
+    room.numberHunt.status !== "finished" ||
+    !room.numberHunt.players.every((player) => player.connected) ||
+    !room.numberHunt.players.some((player) => player.socketId === socketId)
+  ) {
+    return null;
+  }
+
+  room.status = "in-game";
+  room.numberHunt = resetNumberHuntState(room.numberHunt);
+
+  return toRoomState(normalizedCode, room);
+}
+
 export function removeMemberFromRoom(code: string, socketId: string) {
   const normalizedCode = normalizeCode(code);
   const room = rooms.get(normalizedCode);
@@ -578,6 +687,11 @@ export function removeMemberFromRoom(code: string, socketId: string) {
 
   if (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) {
     pauseDotsAndBoxesPlayer(room.dotsAndBoxes, socketId);
+    return toRoomState(normalizedCode, room);
+  }
+
+  if (room.gameId === "number-hunt" && room.numberHunt) {
+    pauseNumberHuntPlayer(room.numberHunt, socketId);
     return toRoomState(normalizedCode, room);
   }
 
@@ -620,6 +734,12 @@ export function removeMemberFromAllRooms(socketId: string) {
 
     if (room.gameId === "dots-and-boxes" && room.dotsAndBoxes) {
       pauseDotsAndBoxesPlayer(room.dotsAndBoxes, socketId);
+      updatedRooms.push(toRoomState(code, room));
+      continue;
+    }
+
+    if (room.gameId === "number-hunt" && room.numberHunt) {
+      pauseNumberHuntPlayer(room.numberHunt, socketId);
       updatedRooms.push(toRoomState(code, room));
       continue;
     }

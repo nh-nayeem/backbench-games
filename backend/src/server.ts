@@ -1,11 +1,13 @@
 import http from "node:http";
 import path from "node:path";
+import { randomInt } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { Server } from "socket.io";
 import {
+  COMPUTER_SOCKET_ID,
   createComputerRoom,
   createPrivateRoom,
   getRoomState,
@@ -15,11 +17,13 @@ import {
   removeMemberFromAllRooms,
   removeMemberFromRoom,
   playAgainDotsAndBoxes,
+  playAgainNumberHunt,
   sanitizeGameId,
   sanitizeNickname,
   sanitizeSocketId,
   submitDotsAndBoxesEdge,
-  submitHandCricketChoice
+  submitHandCricketChoice,
+  submitNumberHuntPick
 } from "./rooms.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +42,7 @@ const frontendOrigins = (process.env.FRONTEND_ORIGIN ?? defaultFrontendOrigin)
 
 const app = express();
 const httpServer = http.createServer(app);
+const numberHuntBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const io = new Server(httpServer, {
   cors: {
     origin: frontendOrigins
@@ -66,6 +71,51 @@ function emitRoomState(code: string) {
   }
 }
 
+function clearNumberHuntBotTimer(code: string) {
+  const normalizedCode = code.toUpperCase();
+  const timer = numberHuntBotTimers.get(normalizedCode);
+
+  if (timer) {
+    clearTimeout(timer);
+    numberHuntBotTimers.delete(normalizedCode);
+  }
+}
+
+function scheduleNumberHuntBot(code: string) {
+  const roomState = getRoomState(code);
+
+  if (
+    !roomState ||
+    roomState.gameId !== "number-hunt" ||
+    roomState.mode !== "computer" ||
+    roomState.status !== "in-game" ||
+    roomState.numberHunt?.status !== "playing"
+  ) {
+    return;
+  }
+
+  const target = roomState.numberHunt.currentTarget;
+  clearNumberHuntBotTimer(roomState.code);
+
+  const timer = setTimeout(() => {
+    numberHuntBotTimers.delete(roomState.code);
+    const nextRoomState = submitNumberHuntPick(
+      roomState.code,
+      COMPUTER_SOCKET_ID,
+      target
+    );
+
+    if (!nextRoomState) {
+      return;
+    }
+
+    io.to(nextRoomState.code).emit("room-state", nextRoomState);
+    scheduleNumberHuntBot(nextRoomState.code);
+  }, randomInt(1000, 15001));
+
+  numberHuntBotTimers.set(roomState.code, timer);
+}
+
 app.get("/health", (_request, response) => {
   response.json({ ok: true });
 });
@@ -90,6 +140,7 @@ app.post("/rooms", (request, response) => {
     socket.join(roomState.code);
   }
 
+  scheduleNumberHuntBot(roomState.code);
   response.status(201).json(roomState);
 });
 
@@ -244,6 +295,37 @@ io.on("connection", (socket) => {
     callback?.({ ok: true, room: roomState });
   });
 
+  socket.on("number-hunt-pick", (payload, callback) => {
+    const code = typeof payload?.code === "string" ? payload.code : "";
+    const selectedNumber = Number(payload?.number);
+    const roomState = submitNumberHuntPick(code, socket.id, selectedNumber);
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "invalid-number" });
+      return;
+    }
+
+    clearNumberHuntBotTimer(roomState.code);
+    io.to(roomState.code).emit("room-state", roomState);
+    scheduleNumberHuntBot(roomState.code);
+    callback?.({ ok: true, room: roomState });
+  });
+
+  socket.on("number-hunt-play-again", (payload, callback) => {
+    const code = typeof payload?.code === "string" ? payload.code : "";
+    const roomState = playAgainNumberHunt(code, socket.id);
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "invalid-request" });
+      return;
+    }
+
+    clearNumberHuntBotTimer(roomState.code);
+    io.to(roomState.code).emit("room-state", roomState);
+    scheduleNumberHuntBot(roomState.code);
+    callback?.({ ok: true, room: roomState });
+  });
+
   socket.on("leave-room", (payload) => {
     const code = typeof payload?.code === "string" ? payload.code : "";
 
@@ -252,6 +334,7 @@ io.on("connection", (socket) => {
     }
 
     const updatedRoom = removeMemberFromRoom(code, socket.id);
+    clearNumberHuntBotTimer(code);
     socket.leave(code.toUpperCase());
 
     if (updatedRoom) {
@@ -260,7 +343,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    const { updatedRooms } = removeMemberFromAllRooms(socket.id);
+    const { updatedRooms, deletedRoomCodes } = removeMemberFromAllRooms(socket.id);
+
+    for (const deletedRoomCode of deletedRoomCodes) {
+      clearNumberHuntBotTimer(deletedRoomCode);
+    }
 
     for (const roomState of updatedRooms) {
       io.to(roomState.code).emit("room-state", roomState);

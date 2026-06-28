@@ -1,4 +1,4 @@
-export type GameId = "hand-cricket" | "dots-and-boxes";
+export type GameId = "hand-cricket" | "dots-and-boxes" | "number-hunt";
 
 export type Member = {
   socketId: string;
@@ -61,6 +61,34 @@ export type DotsAndBoxesState = {
   disconnectedPlayerIndex: 0 | 1 | null;
 };
 
+export type NumberHuntState = {
+  maxNumber: 100;
+  players: [
+    {
+      socketId: string;
+      nickname: string;
+      connected: boolean;
+    },
+    {
+      socketId: string;
+      nickname: string;
+      connected: boolean;
+    }
+  ];
+  currentTarget: number;
+  scores: [number, number];
+  lastLock: {
+    number: number;
+    socketId: string;
+    nickname: string;
+    playerIndex: 0 | 1;
+  } | null;
+  status: "playing" | "paused" | "finished";
+  winnerIndex: 0 | 1 | null;
+  resultText: string | null;
+  disconnectedPlayerIndex: 0 | 1 | null;
+};
+
 export type RoomState = {
   code: string;
   gameId: GameId;
@@ -71,6 +99,7 @@ export type RoomState = {
   members: Member[];
   handCricket: HandCricketState | null;
   dotsAndBoxes: DotsAndBoxesState | null;
+  numberHunt: NumberHuntState | null;
 };
 
 export type GameDefinition = {

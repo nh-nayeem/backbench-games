@@ -31,6 +31,7 @@ type ChoiceResponse =
     };
 
 type DotsAndBoxesResponse = ChoiceResponse;
+type NumberHuntResponse = ChoiceResponse;
 
 type PlayClientProps = {
   code: string;
@@ -57,6 +58,35 @@ function getDotsPlayerInitial(nickname: string) {
   return nickname.trim().charAt(0).toUpperCase() || "P";
 }
 
+function getPlayerInitial(nickname: string) {
+  if (nickname === "Notebook Bot") {
+    return "C";
+  }
+
+  return nickname.trim().charAt(0).toUpperCase() || "P";
+}
+
+function getSeededNumberOrder(seedText: string) {
+  const numbers = Array.from({ length: 100 }, (_item, index) => index + 1);
+  let seed = 2166136261;
+
+  for (const character of seedText) {
+    seed ^= character.charCodeAt(0);
+    seed = Math.imul(seed, 16777619);
+  }
+
+  for (let index = numbers.length - 1; index > 0; index -= 1) {
+    seed = Math.imul(seed ^ (seed >>> 15), 2246822507);
+    seed = Math.imul(seed ^ (seed >>> 13), 3266489909);
+    const swapIndex = Math.abs(seed ^ (seed >>> 16)) % (index + 1);
+    const currentNumber = numbers[index];
+    numbers[index] = numbers[swapIndex];
+    numbers[swapIndex] = currentNumber;
+  }
+
+  return numbers;
+}
+
 export function PlayClient({ code }: PlayClientProps) {
   const router = useRouter();
   const [nickname, setNickname] = useState<string | null>(null);
@@ -68,12 +98,25 @@ export function PlayClient({ code }: PlayClientProps) {
   );
   const [pendingChoice, setPendingChoice] = useState<number | null>(null);
   const [pendingDotsEdge, setPendingDotsEdge] = useState<string | null>(null);
+  const [pendingNumber, setPendingNumber] = useState<number | null>(null);
+  const [numberFeedback, setNumberFeedback] = useState<{
+    number: number;
+    type: "accepted" | "opponent" | "wrong";
+  } | null>(null);
   const revealedBallKey = useRef("");
+  const numberFeedbackTimeout = useRef<number | null>(null);
+  const numberPendingFinishTimeout = useRef<number | null>(null);
+  const lastNumberHuntLockKey = useRef("__initial");
   const [showReveal, setShowReveal] = useState(false);
   const [error, setError] = useState("");
 
   const handCricket = roomState?.handCricket ?? null;
   const dotsAndBoxes = roomState?.dotsAndBoxes ?? null;
+  const numberHunt = roomState?.numberHunt ?? null;
+  const numberHuntNumbers = useMemo(
+    () => getSeededNumberOrder(code),
+    [code]
+  );
   const batter = roomState?.members.find(
     (member) => member.socketId === handCricket?.batterSocketId
   );
@@ -141,6 +184,27 @@ export function PlayClient({ code }: PlayClientProps) {
         setStatus("joined");
         setPendingChoice(null);
         setPendingDotsEdge(null);
+
+        const nextLastLock = nextRoomState.numberHunt?.lastLock;
+
+        if (nextLastLock) {
+          const nextLastLockKey = `${nextLastLock.number}:${nextLastLock.socketId}`;
+
+          if (
+            lastNumberHuntLockKey.current !== "__initial" &&
+            lastNumberHuntLockKey.current !== nextLastLockKey &&
+            nextLastLock.socketId !== socket.id
+          ) {
+            flashNumberFeedback(nextLastLock.number, "opponent");
+          }
+
+          lastNumberHuntLockKey.current = nextLastLockKey;
+        } else if (
+          nextRoomState.gameId === "number-hunt" &&
+          lastNumberHuntLockKey.current === "__initial"
+        ) {
+          lastNumberHuntLockKey.current = "";
+        }
       }
     }
 
@@ -207,6 +271,71 @@ export function PlayClient({ code }: PlayClientProps) {
     return () => window.clearTimeout(timeout);
   }, [lastBallKey]);
 
+  useEffect(() => {
+    return () => {
+      if (numberFeedbackTimeout.current) {
+        window.clearTimeout(numberFeedbackTimeout.current);
+      }
+
+      if (numberPendingFinishTimeout.current) {
+        window.clearTimeout(numberPendingFinishTimeout.current);
+      }
+    };
+  }, []);
+
+  function flashNumberFeedback(
+    number: number,
+    type: "accepted" | "opponent" | "wrong"
+  ) {
+    if (numberFeedbackTimeout.current) {
+      window.clearTimeout(numberFeedbackTimeout.current);
+    }
+
+    setNumberFeedback(null);
+
+    window.requestAnimationFrame(() => {
+      setNumberFeedback({ number, type });
+      numberFeedbackTimeout.current = window.setTimeout(
+        () => {
+          setNumberFeedback(null);
+          numberFeedbackTimeout.current = null;
+        },
+        type === "wrong" ? 1500 : 1500
+      );
+    });
+  }
+
+  function showImmediateNumberFeedback(
+    number: number,
+    type: "accepted" | "opponent" | "wrong",
+    durationMs = 1500
+  ) {
+    if (numberFeedbackTimeout.current) {
+      window.clearTimeout(numberFeedbackTimeout.current);
+    }
+
+    setNumberFeedback({ number, type });
+    numberFeedbackTimeout.current = window.setTimeout(() => {
+      setNumberFeedback(null);
+      numberFeedbackTimeout.current = null;
+    }, durationMs);
+  }
+
+  function finishNumberHuntPick(
+    selectedNumber: number,
+    feedbackType: "accepted" | "wrong"
+  ) {
+    if (numberPendingFinishTimeout.current) {
+      window.clearTimeout(numberPendingFinishTimeout.current);
+    }
+
+    numberPendingFinishTimeout.current = window.setTimeout(() => {
+      setPendingNumber(null);
+      flashNumberFeedback(selectedNumber, feedbackType);
+      numberPendingFinishTimeout.current = null;
+    }, 1000);
+  }
+
   function resetMemory() {
     clearBackbenchStorage();
     getSocket().disconnect();
@@ -264,6 +393,52 @@ export function PlayClient({ code }: PlayClientProps) {
     );
   }
 
+  function submitNumberHuntPick(selectedNumber: number) {
+    if (!numberHunt || selectedNumber !== numberHunt.currentTarget) {
+      if (numberPendingFinishTimeout.current) {
+        window.clearTimeout(numberPendingFinishTimeout.current);
+        numberPendingFinishTimeout.current = null;
+      }
+
+      setPendingNumber(null);
+      flashNumberFeedback(selectedNumber, "wrong");
+      return;
+    }
+
+    setPendingNumber(selectedNumber);
+    setNumberFeedback(null);
+    setError("");
+
+    getSocket().emit(
+      "number-hunt-pick",
+      { code, number: selectedNumber },
+      (response: NumberHuntResponse) => {
+        if (!response.ok) {
+          setPendingNumber(null);
+          showImmediateNumberFeedback(selectedNumber, "opponent");
+          return;
+        }
+
+        setPendingNumber(null);
+        showImmediateNumberFeedback(selectedNumber, "accepted");
+      }
+    );
+  }
+
+  function playAgainNumberHunt() {
+    setError("");
+
+    getSocket().emit(
+      "number-hunt-play-again",
+      { code },
+      (response: NumberHuntResponse) => {
+        if (!response.ok) {
+          setError("Could not start a new game.");
+        }
+      }
+    );
+  }
+
   if (!isReady) {
     return null;
   }
@@ -280,6 +455,131 @@ export function PlayClient({ code }: PlayClientProps) {
           <h1 className="title">Game not found</h1>
           <p className="muted">No active game exists for {code}.</p>
         </section>
+      </main>
+    );
+  }
+
+  if (roomState?.gameId === "number-hunt") {
+    const disconnectedPlayer =
+      numberHunt?.disconnectedPlayerIndex === 0 ||
+      numberHunt?.disconnectedPlayerIndex === 1
+        ? numberHunt.players[numberHunt.disconnectedPlayerIndex]
+        : null;
+    const finalMessage =
+      numberHunt?.status === "finished"
+        ? numberHunt.resultText ??
+          (numberHunt.winnerIndex === null
+            ? "Game drawn."
+            : `${numberHunt.players[numberHunt.winnerIndex].nickname} wins.`)
+        : null;
+
+    return (
+      <main className="page app-page">
+        <ResetButton nickname={nickname} onReset={resetMemory} />
+        <div className="play-shell number-hunt-shell">
+          <aside className="paper-note play-meta-note">
+            <div>
+              <h1 className="title">Number Hunt</h1>
+              <p className="muted">Room {code}</p>
+            </div>
+
+            {error ? <p className="error">{error}</p> : null}
+            {!roomState || !numberHunt ? (
+              <p className="muted">Loading game...</p>
+            ) : null}
+
+            {numberHunt ? (
+              <>
+                <div className="number-hunt-target">
+                  <span className="score-label">Current target</span>
+                  <strong>{numberHunt.currentTarget}</strong>
+                </div>
+
+                <div className="dots-scoreboard">
+                  {numberHunt.players.map((player, index) => (
+                    <div
+                      className="dots-player"
+                      key={player.socketId}
+                    >
+                      <span className="score-label">
+                        {player.socketId === socketId ? "You" : "Opponent"}
+                      </span>
+                      <strong>
+                        {player.nickname} ({getPlayerInitial(player.nickname)})
+                        {!player.connected ? " (disconnected)" : ""}
+                      </strong>
+                      <span>{numberHunt.scores[index]} point(s)</span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="result">
+                  {numberHunt.status === "paused" && disconnectedPlayer
+                    ? `${disconnectedPlayer.nickname} disconnected. Waiting for them to reconnect.`
+                    : numberHunt.status === "finished"
+                      ? finalMessage
+                      : numberHunt.lastLock
+                        ? `${numberHunt.lastLock.nickname} locked ${numberHunt.lastLock.number}.`
+                        : "Find the target first."}
+                </p>
+              </>
+            ) : null}
+          </aside>
+
+          <section className="panel stack wide-panel play-panel number-hunt-panel">
+            {numberHunt ? (
+              <>
+                <div className="number-grid" aria-label="Number Hunt board">
+                  {numberHuntNumbers.slice(0, numberHunt.maxNumber).map((number) => {
+                    const isPastNumber = number < numberHunt.currentTarget;
+                    const isPending = pendingNumber === number;
+                    const feedbackClass =
+                      numberFeedback?.number === number
+                        ? ` number-cell-${numberFeedback.type}`
+                        : "";
+                    const pendingClass = isPending
+                      ? " number-cell-pending"
+                      : "";
+
+                    return (
+                      <button
+                        className={`${
+                          isPastNumber
+                            ? "number-cell number-cell-locked"
+                            : "number-cell"
+                        }${pendingClass}${feedbackClass}`}
+                        disabled={
+                          numberHunt.status !== "playing" ||
+                          (Boolean(pendingNumber) && !isPending)
+                        }
+                        key={number}
+                        onClick={() => submitNumberHuntPick(number)}
+                        type="button"
+                      >
+                        <span>{number}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {numberHunt.status === "finished" ? (
+                  <div className="dots-final">
+                    <h2>{finalMessage}</h2>
+                    <button
+                      className="button"
+                      onClick={playAgainNumberHunt}
+                      type="button"
+                    >
+                      Play Again
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="muted">Loading game...</p>
+            )}
+          </section>
+        </div>
       </main>
     );
   }

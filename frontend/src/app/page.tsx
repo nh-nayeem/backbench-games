@@ -34,6 +34,12 @@ const fallbackGames: GameDefinition[] = [
     name: "Dots and Boxes",
     minPlayers: 2,
     maxPlayers: 2
+  },
+  {
+    id: "number-hunt",
+    name: "Number Hunt",
+    minPlayers: 2,
+    maxPlayers: 2
   }
 ];
 
@@ -220,7 +226,11 @@ export default function HomePage() {
                 <div className="stack">
                   <div className="game-card-header">
                     <span className="game-mark">
-                      {game.id === "hand-cricket" ? "🏏" : "▦"}
+                      {game.id === "hand-cricket"
+                        ? "🏏"
+                        : game.id === "dots-and-boxes"
+                          ? "▦"
+                          : "100"}
                     </span>
                     <h2 className="card-title">{game.name}</h2>
                     <p className="muted">
