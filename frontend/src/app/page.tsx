@@ -230,7 +230,7 @@ export default function HomePage() {
                         ? "🏏"
                         : game.id === "dots-and-boxes"
                           ? "▦"
-                          : "100"}
+                          : "64"}
                     </span>
                     <h2 className="card-title">{game.name}</h2>
                     <p className="muted">

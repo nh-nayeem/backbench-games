@@ -34,7 +34,7 @@ export type DotsAndBoxesEdge = {
 };
 
 export type DotsAndBoxesState = {
-  boardSize: 5;
+  boardSize: 8;
   players: [
     {
       socketId: string;
@@ -62,7 +62,7 @@ export type DotsAndBoxesState = {
 };
 
 export type NumberHuntState = {
-  maxNumber: 100;
+  maxNumber: 64;
   players: [
     {
       socketId: string;

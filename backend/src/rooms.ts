@@ -573,6 +573,28 @@ export function submitHandCricketChoice(
   return toRoomState(normalizedCode, room);
 }
 
+export function playAgainHandCricket(code: string, socketId: string) {
+  const normalizedCode = normalizeCode(code);
+  const room = rooms.get(normalizedCode);
+
+  if (
+    !room ||
+    room.gameId !== "hand-cricket" ||
+    !room.handCricket ||
+    room.status !== "finished" ||
+    !room.members.some((member) => member.socketId === socketId)
+  ) {
+    return null;
+  }
+
+  room.status = "in-game";
+  room.handCricket = createHandCricketState(room.members);
+
+  submitComputerHandCricketChoice(room);
+
+  return toRoomState(normalizedCode, room);
+}
+
 export function submitDotsAndBoxesEdge(
   code: string,
   socketId: string,

@@ -8,7 +8,11 @@ import {
   ResetButton
 } from "../../components/ResetButton";
 import { ensureSocketConnected, getSocket } from "../../../lib/socket";
-import type { DotsAndBoxesEdge, RoomState } from "../../../lib/types";
+import type {
+  DotsAndBoxesEdge,
+  HandCricketState,
+  RoomState
+} from "../../../lib/types";
 
 type JoinResponse =
   | {
@@ -37,14 +41,44 @@ type PlayClientProps = {
   code: string;
 };
 
+type HandCricketMeta = Pick<
+  HandCricketState,
+  "currentScore" | "innings" | "target"
+>;
+
 const handChoices = [
-  { value: 1, icon: "☝️" },
-  { value: 2, icon: "✌️" },
-  { value: 3, icon: "🤟" },
-  { value: 4, icon: "🖖" },
-  { value: 5, icon: "🖐️" },
-  { value: 6, icon: "👍" }
+  { value: 1 },
+  { value: 2 },
+  { value: 3 },
+  { value: 4 },
+  { value: 5 },
+  { value: 6 }
 ];
+
+const cricketHandImages = [
+  "/hand-cricket/hand-1-right.svg",
+  "/hand-cricket/hand-2-right.svg",
+  "/hand-cricket/hand-3-right.svg",
+  "/hand-cricket/hand-4-right.svg",
+  "/hand-cricket/hand-5-right.svg",
+  "/hand-cricket/hand-6-right.svg"
+];
+
+function getCricketRevealHandSrc(choice: number) {
+  return cricketHandImages[choice - 1] ?? cricketHandImages[0];
+}
+
+function getHandCricketLastBallKey(handCricket: HandCricketState | null) {
+  return handCricket?.lastBall
+    ? [
+        handCricket.innings,
+        handCricket.currentScore,
+        handCricket.lastBall.batterChoice,
+        handCricket.lastBall.bowlerChoice,
+        handCricket.lastBall.isOut
+      ].join(":")
+    : "";
+}
 
 function edgeKey(edge: DotsAndBoxesEdge) {
   return `${edge.orientation}:${edge.row}:${edge.col}`;
@@ -66,8 +100,8 @@ function getPlayerInitial(nickname: string) {
   return nickname.trim().charAt(0).toUpperCase() || "P";
 }
 
-function getSeededNumberOrder(seedText: string) {
-  const numbers = Array.from({ length: 100 }, (_item, index) => index + 1);
+function getSeededNumberOrder(seedText: string, maxNumber: number) {
+  const numbers = Array.from({ length: maxNumber }, (_item, index) => index + 1);
   let seed = 2166136261;
 
   for (const character of seedText) {
@@ -104,18 +138,33 @@ export function PlayClient({ code }: PlayClientProps) {
     type: "accepted" | "opponent" | "wrong";
   } | null>(null);
   const revealedBallKey = useRef("");
+  const drawWheelDelay = useRef<number | null>(null);
+  const roleAnnouncementTimeout = useRef<number | null>(null);
+  const lastRoleAnnouncementKey = useRef("");
+  const roomStateRef = useRef<RoomState | null>(null);
+  const lastVisibleHandCricketMeta = useRef<HandCricketMeta | null>(null);
   const numberFeedbackTimeout = useRef<number | null>(null);
   const numberPendingFinishTimeout = useRef<number | null>(null);
   const lastNumberHuntLockKey = useRef("__initial");
+  const [heldHandCricketMeta, setHeldHandCricketMeta] =
+    useState<HandCricketMeta | null>(null);
+  const [visibleHandCricketMeta, setVisibleHandCricketMeta] =
+    useState<HandCricketMeta | null>(null);
   const [showReveal, setShowReveal] = useState(false);
+  const [showRevealChoices, setShowRevealChoices] = useState(false);
+  const [showRevealScore, setShowRevealScore] = useState(false);
+  const [showDrawWheel, setShowDrawWheel] = useState(false);
+  const [roleAnnouncement, setRoleAnnouncement] = useState<
+    "batting" | "bowling" | null
+  >(null);
   const [error, setError] = useState("");
 
   const handCricket = roomState?.handCricket ?? null;
   const dotsAndBoxes = roomState?.dotsAndBoxes ?? null;
   const numberHunt = roomState?.numberHunt ?? null;
   const numberHuntNumbers = useMemo(
-    () => getSeededNumberOrder(code),
-    [code]
+    () => getSeededNumberOrder(code, numberHunt?.maxNumber ?? 64),
+    [code, numberHunt?.maxNumber]
   );
   const batter = roomState?.members.find(
     (member) => member.socketId === handCricket?.batterSocketId
@@ -151,19 +200,49 @@ export function PlayClient({ code }: PlayClientProps) {
           ? "win"
           : "lose"
       : null;
-  const lastBallKey = handCricket?.lastBall
-    ? [
-        handCricket.innings,
-        handCricket.currentScore,
-        handCricket.lastBall.batterChoice,
-        handCricket.lastBall.bowlerChoice,
-        handCricket.lastBall.isOut
-      ].join(":")
-    : "";
-  const shouldShowDrawOverlay =
-    roomState?.status !== "finished" &&
-    Boolean(handCricket) &&
-    (Boolean(pendingChoice) || hasSubmitted || showReveal);
+  const lastBallKey = getHandCricketLastBallKey(handCricket);
+  const batterRevealHandSrc = handCricket?.lastBall
+    ? getCricketRevealHandSrc(handCricket.lastBall.batterChoice)
+    : null;
+  const bowlerRevealHandSrc = handCricket?.lastBall
+    ? getCricketRevealHandSrc(handCricket.lastBall.bowlerChoice)
+    : null;
+  const displayedHandCricketMeta =
+    showReveal && !showRevealScore
+      ? visibleHandCricketMeta ??
+        heldHandCricketMeta ??
+        lastVisibleHandCricketMeta.current ??
+        handCricket
+      : visibleHandCricketMeta ?? handCricket;
+  const shouldShowFinalOutcome = Boolean(finalOutcome && handCricket && !showReveal);
+  const shouldShowCricketStage =
+    roomState?.status !== "finished" || Boolean(showReveal && handCricket?.lastBall);
+
+  const roleAnnouncementText =
+    roleAnnouncement === "batting"
+      ? "You are batting"
+      : roleAnnouncement === "bowling"
+        ? "You are bowling"
+        : "";
+  const roleAnnouncementInningsText =
+    handCricket?.innings === 2 ? "2nd innings" : "1st innings";
+
+  useEffect(() => {
+    roomStateRef.current = roomState;
+  }, [roomState]);
+
+  useEffect(() => {
+    if (handCricket && (!showReveal || showRevealScore)) {
+      const nextVisibleMeta = {
+        currentScore: handCricket.currentScore,
+        innings: handCricket.innings,
+        target: handCricket.target
+      };
+
+      lastVisibleHandCricketMeta.current = nextVisibleMeta;
+      setVisibleHandCricketMeta(nextVisibleMeta);
+    }
+  }, [handCricket, showReveal, showRevealScore]);
 
   useEffect(() => {
     setNickname(localStorage.getItem("backbench:nickname"));
@@ -180,6 +259,41 @@ export function PlayClient({ code }: PlayClientProps) {
 
     function handleRoomState(nextRoomState: RoomState) {
       if (nextRoomState.code === code) {
+        const previousHandCricket = roomStateRef.current?.handCricket;
+        const nextHandCricket = nextRoomState.handCricket;
+        const nextHandCricketBallKey =
+          getHandCricketLastBallKey(nextHandCricket);
+
+        if (
+          previousHandCricket &&
+          nextHandCricket?.lastBall &&
+          nextHandCricketBallKey !== revealedBallKey.current
+        ) {
+          const previousMeta = {
+            currentScore: previousHandCricket.currentScore,
+            innings: previousHandCricket.innings,
+            target: previousHandCricket.target
+          };
+
+          lastVisibleHandCricketMeta.current = previousMeta;
+          setHeldHandCricketMeta(previousMeta);
+          setVisibleHandCricketMeta(previousMeta);
+          setShowDrawWheel(false);
+          setShowReveal(true);
+          setShowRevealChoices(false);
+          setShowRevealScore(false);
+        } else if (nextHandCricket) {
+          const nextVisibleMeta = {
+            currentScore: nextHandCricket.currentScore,
+            innings: nextHandCricket.innings,
+            target: nextHandCricket.target
+          };
+
+          lastVisibleHandCricketMeta.current = nextVisibleMeta;
+          setVisibleHandCricketMeta(nextVisibleMeta);
+        }
+
+        roomStateRef.current = nextRoomState;
         setRoomState(nextRoomState);
         setStatus("joined");
         setPendingChoice(null);
@@ -232,6 +346,20 @@ export function PlayClient({ code }: PlayClientProps) {
               return;
             }
 
+            const responseHandCricket = response.room.handCricket;
+
+            if (responseHandCricket) {
+              const responseVisibleMeta = {
+                currentScore: responseHandCricket.currentScore,
+                innings: responseHandCricket.innings,
+                target: responseHandCricket.target
+              };
+
+              lastVisibleHandCricketMeta.current = responseVisibleMeta;
+              setVisibleHandCricketMeta(responseVisibleMeta);
+            }
+
+            roomStateRef.current = response.room;
             setRoomState(response.room);
             setStatus("joined");
           }
@@ -262,14 +390,157 @@ export function PlayClient({ code }: PlayClientProps) {
     }
 
     revealedBallKey.current = lastBallKey;
+    setShowDrawWheel(false);
     setShowReveal(true);
+    setShowRevealChoices(false);
+    setShowRevealScore(false);
 
-    const timeout = window.setTimeout(() => {
+    const revealChoicesTimeout = window.setTimeout(() => {
+      setShowRevealChoices(true);
+      setHeldHandCricketMeta(null);
+    }, 850);
+
+    const revealScoreTimeout = window.setTimeout(() => {
+      const currentHandCricket = roomStateRef.current?.handCricket;
+
+      setShowRevealScore(true);
+
+      if (currentHandCricket) {
+        const nextVisibleMeta = {
+          currentScore: currentHandCricket.currentScore,
+          innings: currentHandCricket.innings,
+          target: currentHandCricket.target
+        };
+
+        lastVisibleHandCricketMeta.current = nextVisibleMeta;
+        setVisibleHandCricketMeta(nextVisibleMeta);
+      }
+    }, 1850);
+
+    const hideRevealTimeout = window.setTimeout(() => {
       setShowReveal(false);
-    }, 1600);
+      setShowRevealChoices(false);
+      setShowRevealScore(false);
+      setHeldHandCricketMeta(null);
+      const currentHandCricket = roomStateRef.current?.handCricket;
 
-    return () => window.clearTimeout(timeout);
+      if (currentHandCricket) {
+        const nextVisibleMeta = {
+          currentScore: currentHandCricket.currentScore,
+          innings: currentHandCricket.innings,
+          target: currentHandCricket.target
+        };
+
+        lastVisibleHandCricketMeta.current = nextVisibleMeta;
+        setVisibleHandCricketMeta(nextVisibleMeta);
+      }
+    }, 2900);
+
+    return () => {
+      window.clearTimeout(revealChoicesTimeout);
+      window.clearTimeout(revealScoreTimeout);
+      window.clearTimeout(hideRevealTimeout);
+    };
   }, [lastBallKey]);
+
+  useEffect(() => {
+    if (!handCricket || roomState?.status === "finished" || !role) {
+      if (roleAnnouncementTimeout.current) {
+        window.clearTimeout(roleAnnouncementTimeout.current);
+        roleAnnouncementTimeout.current = null;
+      }
+
+      setRoleAnnouncement(null);
+
+      if (roomState?.status === "finished") {
+        lastRoleAnnouncementKey.current = "";
+      }
+
+      return;
+    }
+
+    if (hasSubmitted || pendingChoice || showReveal) {
+      if (roleAnnouncementTimeout.current) {
+        window.clearTimeout(roleAnnouncementTimeout.current);
+        roleAnnouncementTimeout.current = null;
+      }
+
+      setRoleAnnouncement(null);
+      return;
+    }
+
+    const nextAnnouncementKey = [
+      roomState?.code ?? code,
+      handCricket.firstInningsBatterSocketId,
+      handCricket.innings,
+      role
+    ].join(":");
+
+    if (lastRoleAnnouncementKey.current === nextAnnouncementKey) {
+      return;
+    }
+
+    if (roleAnnouncementTimeout.current) {
+      window.clearTimeout(roleAnnouncementTimeout.current);
+      roleAnnouncementTimeout.current = null;
+    }
+
+    lastRoleAnnouncementKey.current = nextAnnouncementKey;
+    setRoleAnnouncement(role);
+
+    roleAnnouncementTimeout.current = window.setTimeout(() => {
+      setRoleAnnouncement(null);
+      roleAnnouncementTimeout.current = null;
+    }, 1300);
+  }, [
+    code,
+    handCricket,
+    hasSubmitted,
+    pendingChoice,
+    role,
+    roomState?.code,
+    roomState?.status,
+    showReveal
+  ]);
+
+  useEffect(() => {
+    if (drawWheelDelay.current) {
+      window.clearTimeout(drawWheelDelay.current);
+      drawWheelDelay.current = null;
+    }
+
+    setShowDrawWheel(false);
+
+    if (
+      !handCricket ||
+      roomState?.status === "finished" ||
+      hasSubmitted ||
+      pendingChoice ||
+      roleAnnouncement ||
+      showReveal
+    ) {
+      return;
+    }
+
+    drawWheelDelay.current = window.setTimeout(() => {
+      setShowDrawWheel(true);
+      drawWheelDelay.current = null;
+    }, 1500);
+
+    return () => {
+      if (drawWheelDelay.current) {
+        window.clearTimeout(drawWheelDelay.current);
+        drawWheelDelay.current = null;
+      }
+    };
+  }, [
+    handCricket,
+    roomState?.status,
+    hasSubmitted,
+    pendingChoice,
+    roleAnnouncement,
+    showReveal
+  ]);
 
   useEffect(() => {
     return () => {
@@ -279,6 +550,14 @@ export function PlayClient({ code }: PlayClientProps) {
 
       if (numberPendingFinishTimeout.current) {
         window.clearTimeout(numberPendingFinishTimeout.current);
+      }
+
+      if (drawWheelDelay.current) {
+        window.clearTimeout(drawWheelDelay.current);
+      }
+
+      if (roleAnnouncementTimeout.current) {
+        window.clearTimeout(roleAnnouncementTimeout.current);
       }
     };
   }, []);
@@ -348,6 +627,7 @@ export function PlayClient({ code }: PlayClientProps) {
 
   function submitChoice(choice: number) {
     setPendingChoice(choice);
+    setShowDrawWheel(false);
     setError("");
 
     getSocket().emit(
@@ -357,6 +637,27 @@ export function PlayClient({ code }: PlayClientProps) {
         if (!response.ok) {
           setPendingChoice(null);
           setError("Could not submit that choice.");
+        }
+      }
+    );
+  }
+
+  function playAgainHandCricket() {
+    setError("");
+    setPendingChoice(null);
+    setShowReveal(false);
+    setShowRevealChoices(false);
+    setShowRevealScore(false);
+    setShowDrawWheel(false);
+    setHeldHandCricketMeta(null);
+    setVisibleHandCricketMeta(null);
+
+    getSocket().emit(
+      "hand-cricket-play-again",
+      { code },
+      (response: ChoiceResponse) => {
+        if (!response.ok) {
+          setError("Could not start a new match.");
         }
       }
     );
@@ -472,10 +773,47 @@ export function PlayClient({ code }: PlayClientProps) {
             ? "Game drawn."
             : `${numberHunt.players[numberHunt.winnerIndex].nickname} wins.`)
         : null;
+    const numberHuntFinalOutcome =
+      numberHunt?.status === "finished"
+        ? numberHunt.winnerIndex === null
+          ? "tie"
+          : numberHunt.players[numberHunt.winnerIndex].socketId === socketId
+            ? "win"
+            : "lose"
+        : null;
 
     return (
       <main className="page app-page">
         <ResetButton nickname={nickname} onReset={resetMemory} />
+        {numberHuntFinalOutcome && finalMessage ? (
+          <div className="draw-overlay" role="status">
+            <div className={`result-pop result-pop-${numberHuntFinalOutcome}`}>
+              <p className="eyebrow">Game finished</p>
+              <div className="result-icon">
+                {numberHuntFinalOutcome === "win"
+                  ? "🏆"
+                  : numberHuntFinalOutcome === "lose"
+                    ? "😮"
+                    : "🤝"}
+              </div>
+              <h2 className="result-title">
+                {numberHuntFinalOutcome === "win"
+                  ? "You won!"
+                  : numberHuntFinalOutcome === "lose"
+                    ? "You lost"
+                    : "Game drawn"}
+              </h2>
+              <p className="muted">{finalMessage}</p>
+              <button
+                className="button"
+                onClick={playAgainNumberHunt}
+                type="button"
+              >
+                Play Again
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="play-shell number-hunt-shell">
           <aside className="paper-note play-meta-note">
             <div>
@@ -490,11 +828,6 @@ export function PlayClient({ code }: PlayClientProps) {
 
             {numberHunt ? (
               <>
-                <div className="number-hunt-target">
-                  <span className="score-label">Current target</span>
-                  <strong>{numberHunt.currentTarget}</strong>
-                </div>
-
                 <div className="dots-scoreboard">
                   {numberHunt.players.map((player, index) => (
                     <div
@@ -511,6 +844,11 @@ export function PlayClient({ code }: PlayClientProps) {
                       <span>{numberHunt.scores[index]} point(s)</span>
                     </div>
                   ))}
+                </div>
+
+                <div className="number-hunt-target">
+                  <span className="score-label">Current target</span>
+                  <strong>{numberHunt.currentTarget}</strong>
                 </div>
 
                 <p className="result">
@@ -562,18 +900,6 @@ export function PlayClient({ code }: PlayClientProps) {
                   })}
                 </div>
 
-                {numberHunt.status === "finished" ? (
-                  <div className="dots-final">
-                    <h2>{finalMessage}</h2>
-                    <button
-                      className="button"
-                      onClick={playAgainNumberHunt}
-                      type="button"
-                    >
-                      Play Again
-                    </button>
-                  </div>
-                ) : null}
               </>
             ) : (
               <p className="muted">Loading game...</p>
@@ -585,7 +911,7 @@ export function PlayClient({ code }: PlayClientProps) {
   }
 
   if (roomState?.gameId === "dots-and-boxes") {
-    const boardSize = dotsAndBoxes?.boardSize ?? 5;
+    const boardSize = dotsAndBoxes?.boardSize ?? 8;
     const dotCount = boardSize + 1;
     const dotGap = 84;
     const boardPadding = 28;
@@ -617,6 +943,14 @@ export function PlayClient({ code }: PlayClientProps) {
             ? "Game drawn."
             : `${dotsAndBoxes.players[dotsAndBoxes.winnerIndex].nickname} wins.`)
         : null;
+    const dotsFinalOutcome =
+      dotsAndBoxes?.status === "finished"
+        ? dotsAndBoxes.winnerIndex === null
+          ? "tie"
+          : dotsAndBoxes.players[dotsAndBoxes.winnerIndex].socketId === socketId
+            ? "win"
+            : "lose"
+        : null;
 
     const horizontalEdges = Array.from({ length: dotCount }, (_row, row) =>
       Array.from({ length: boardSize }, (_col, col) => ({
@@ -636,6 +970,35 @@ export function PlayClient({ code }: PlayClientProps) {
     return (
       <main className="page app-page">
         <ResetButton nickname={nickname} onReset={resetMemory} />
+        {dotsFinalOutcome && finalMessage ? (
+          <div className="draw-overlay" role="status">
+            <div className={`result-pop result-pop-${dotsFinalOutcome}`}>
+              <p className="eyebrow">Game finished</p>
+              <div className="result-icon">
+                {dotsFinalOutcome === "win"
+                  ? "🏆"
+                  : dotsFinalOutcome === "lose"
+                    ? "😮"
+                    : "🤝"}
+              </div>
+              <h2 className="result-title">
+                {dotsFinalOutcome === "win"
+                  ? "You won!"
+                  : dotsFinalOutcome === "lose"
+                    ? "You lost"
+                    : "Game drawn"}
+              </h2>
+              <p className="muted">{finalMessage}</p>
+              <button
+                className="button"
+                onClick={playAgainDotsAndBoxes}
+                type="button"
+              >
+                Play Again
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="play-shell dots-play-shell">
           <aside className="paper-note play-meta-note">
             <div>
@@ -800,18 +1163,6 @@ export function PlayClient({ code }: PlayClientProps) {
                 </svg>
               </div>
 
-              {dotsAndBoxes.status === "finished" ? (
-                <div className="dots-final">
-                  <h2>{finalMessage}</h2>
-                  <button
-                    className="button"
-                    onClick={playAgainDotsAndBoxes}
-                    type="button"
-                  >
-                    Play Again
-                  </button>
-                </div>
-              ) : null}
             </>
           ) : null}
           </section>
@@ -823,38 +1174,7 @@ export function PlayClient({ code }: PlayClientProps) {
   return (
     <main className="page app-page">
       <ResetButton nickname={nickname} onReset={resetMemory} />
-      {shouldShowDrawOverlay && handCricket ? (
-        <div className="draw-overlay" role="status">
-          <div className="draw-pop">
-            {showReveal && handCricket.lastBall ? (
-              <>
-                <p className="eyebrow">Draw revealed</p>
-                <div className="draw-faceoff">
-                  <span>{handChoices[handCricket.lastBall.batterChoice - 1].icon}</span>
-                  <strong>vs</strong>
-                  <span>{handChoices[handCricket.lastBall.bowlerChoice - 1].icon}</span>
-                </div>
-                <p className="draw-result">
-                  {handCricket.lastBall.isOut
-                    ? "Out!"
-                    : `${handCricket.lastBall.runs} run(s)`}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="eyebrow">Hands are hidden</p>
-                <div className="draw-loader">
-                  <span>✊</span>
-                  <span>✋</span>
-                  <span>🤞</span>
-                </div>
-                <p className="draw-result">Waiting for the draw...</p>
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
-      {finalOutcome && handCricket ? (
+      {shouldShowFinalOutcome && handCricket ? (
         <div className="draw-overlay" role="status">
           <div className={`result-pop result-pop-${finalOutcome}`}>
             <p className="eyebrow">Match finished</p>
@@ -873,6 +1193,13 @@ export function PlayClient({ code }: PlayClientProps) {
                   : "Match tied"}
             </h2>
             <p className="muted">{handCricket.resultText}</p>
+            <button
+              className="button"
+              onClick={playAgainHandCricket}
+              type="button"
+            >
+              Play Again
+            </button>
           </div>
         </div>
       ) : null}
@@ -893,15 +1220,23 @@ export function PlayClient({ code }: PlayClientProps) {
             <div className="score-grid">
               <div className="score-box">
                 <span className="score-label">Innings</span>
-                <strong>{handCricket.innings}</strong>
+                <strong>{displayedHandCricketMeta?.innings ?? handCricket.innings}</strong>
               </div>
               <div className="score-box">
                 <span className="score-label">Score</span>
-                <strong>{handCricket.currentScore}</strong>
+                <strong>
+                  {displayedHandCricketMeta?.currentScore ??
+                    handCricket.currentScore}
+                </strong>
               </div>
               <div className="score-box">
                 <span className="score-label">Target</span>
-                <strong>{handCricket.target ?? "-"}</strong>
+                <strong>
+                  {displayedHandCricketMeta?.target === null ||
+                  displayedHandCricketMeta?.target === undefined
+                    ? "-"
+                    : displayedHandCricketMeta.target}
+                </strong>
               </div>
             </div>
 
@@ -922,7 +1257,7 @@ export function PlayClient({ code }: PlayClientProps) {
               </div>
             </div>
 
-            {handCricket.lastBall ? (
+            {handCricket.lastBall && (!showReveal || showRevealScore) ? (
               <p className="muted">
                 Last ball: batter {handCricket.lastBall.batterChoice}, bowler{" "}
                 {handCricket.lastBall.bowlerChoice}
@@ -941,36 +1276,110 @@ export function PlayClient({ code }: PlayClientProps) {
 
         <section className="panel stack wide-panel play-panel play-stage-panel">
           {roomState && handCricket ? (
-            roomState.status === "finished" ? (
+            !shouldShowCricketStage ? (
               <p className="result">{handCricket.resultText}</p>
             ) : (
-              <>
+              <div className="cricket-stage">
                 <div
                   className={
-                    hasSubmitted || pendingChoice
-                      ? "hand-wheel hand-wheel-locked"
-                      : "hand-wheel hand-wheel-active"
+                    showReveal && handCricket.lastBall
+                      ? showRevealChoices
+                        ? "cricket-hands cricket-hands-reveal cricket-hands-open"
+                        : "cricket-hands cricket-hands-reveal"
+                      : "cricket-hands"
                   }
                 >
-                  <div className="wheel-center" aria-hidden="true">
-                    <span>{role === "batting" ? "🏏" : "⚾"}</span>
+                  <div className="cricket-player-hand cricket-player-hand-left">
+                    <span className="cricket-hand-label">Batter</span>
+                    <span className="cricket-hand">
+                      <img
+                        alt={
+                          showRevealChoices && handCricket.lastBall
+                            ? `Batter chose ${handCricket.lastBall.batterChoice}`
+                            : "Batter closed hand"
+                        }
+                        className="cricket-hand-image cricket-hand-image-left"
+                        draggable={false}
+                        src={
+                          showRevealChoices && batterRevealHandSrc
+                            ? batterRevealHandSrc
+                            : "/hand-cricket/hand-0-right.svg"
+                        }
+                      />
+                    </span>
+                    <strong>{batter?.nickname ?? "Player"}</strong>
                   </div>
-                  {handChoices.map((choice) => (
-                    <button
-                      className="hand-button"
-                      disabled={Boolean(pendingChoice) || hasSubmitted}
-                      key={choice.value}
-                      onClick={() => submitChoice(choice.value)}
-                    >
-                      <span className="hand-icon">{choice.icon}</span>
-                      <span>{choice.value}</span>
-                    </button>
-                  ))}
+                  <span className="cricket-vs">vs</span>
+                  <div className="cricket-player-hand cricket-player-hand-right">
+                    <span className="cricket-hand-label">Bowler</span>
+                    <span className="cricket-hand">
+                      <img
+                        alt={
+                          showRevealChoices && handCricket.lastBall
+                            ? `Bowler chose ${handCricket.lastBall.bowlerChoice}`
+                            : "Bowler closed hand"
+                        }
+                        className="cricket-hand-image"
+                        draggable={false}
+                        src={
+                          showRevealChoices && bowlerRevealHandSrc
+                            ? bowlerRevealHandSrc
+                            : "/hand-cricket/hand-0-right.svg"
+                        }
+                      />
+                    </span>
+                    <strong>{bowler?.nickname ?? "Player"}</strong>
+                  </div>
                 </div>
-                {hasSubmitted || pendingChoice ? (
-                  <p className="muted">Choice locked. Waiting for opponent...</p>
+
+                {roleAnnouncement ? (
+                  <div
+                    className="cricket-popup cricket-start-popup"
+                    role="status"
+                  >
+                    <p className="eyebrow">{roleAnnouncementInningsText}</p>
+                    <p className="draw-result">{roleAnnouncementText}</p>
+                  </div>
                 ) : null}
-              </>
+
+                {hasSubmitted || pendingChoice ? (
+                  <div className="cricket-popup cricket-wait-popup" role="status">
+                    <p className="eyebrow">Choice locked</p>
+                    <p className="draw-result">Waiting for opponent to draw...</p>
+                  </div>
+                ) : null}
+
+                {showDrawWheel ? (
+                  <div className="cricket-popup cricket-draw-popup" role="dialog">
+                    <p className="eyebrow">Pick a number</p>
+                    <div className="hand-wheel hand-wheel-active">
+                      <div className="wheel-center" aria-hidden="true">
+                        <span>{role === "batting" ? "BAT" : "BOWL"}</span>
+                      </div>
+                      {handChoices.map((choice) => (
+                        <button
+                          className="hand-button"
+                          key={choice.value}
+                          onClick={() => submitChoice(choice.value)}
+                        >
+                          <span className="hand-number">{choice.value}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {showReveal && handCricket.lastBall ? (
+                  <div className="cricket-popup cricket-result-popup" role="status">
+                    <p className="eyebrow">Draw result</p>
+                    <p className="draw-result">
+                      {handCricket.lastBall.isOut
+                        ? "Out!"
+                        : `${handCricket.lastBall.runs} run(s)`}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             )
           ) : (
             <p className="muted">Loading game...</p>

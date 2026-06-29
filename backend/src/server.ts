@@ -17,6 +17,7 @@ import {
   removeMemberFromAllRooms,
   removeMemberFromRoom,
   playAgainDotsAndBoxes,
+  playAgainHandCricket,
   playAgainNumberHunt,
   sanitizeGameId,
   sanitizeNickname,
@@ -250,6 +251,19 @@ io.on("connection", (socket) => {
 
     if (!roomState) {
       callback?.({ ok: false, reason: "invalid-choice" });
+      return;
+    }
+
+    io.to(roomState.code).emit("room-state", roomState);
+    callback?.({ ok: true, room: roomState });
+  });
+
+  socket.on("hand-cricket-play-again", (payload, callback) => {
+    const code = typeof payload?.code === "string" ? payload.code : "";
+    const roomState = playAgainHandCricket(code, socket.id);
+
+    if (!roomState) {
+      callback?.({ ok: false, reason: "invalid-request" });
       return;
     }
 

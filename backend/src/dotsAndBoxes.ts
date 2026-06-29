@@ -23,7 +23,7 @@ export type DotsAndBoxesBox = {
 export type DotsAndBoxesStatus = "playing" | "paused" | "finished";
 
 export type DotsAndBoxesState = {
-  boardSize: 5;
+  boardSize: 8;
   players: [DotsAndBoxesPlayer, DotsAndBoxesPlayer];
   currentPlayerIndex: 0 | 1;
   edges: DotsAndBoxesClaimedEdge[];
@@ -35,7 +35,7 @@ export type DotsAndBoxesState = {
   disconnectedPlayerIndex: 0 | 1 | null;
 };
 
-const BOARD_SIZE = 5;
+const BOARD_SIZE = 8;
 const TOTAL_BOXES = BOARD_SIZE * BOARD_SIZE;
 
 function edgeKey(edge: DotsAndBoxesEdge) {

@@ -602,8 +602,214 @@ input {
   justify-self: center;
 }
 
+.cricket-stage {
+  position: relative;
+  display: grid;
+  min-height: 440px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(16, 36, 73, 0.16);
+  border-radius: 5px 8px 4px 7px;
+  background:
+    linear-gradient(90deg, rgba(214, 35, 35, 0.16) 1px, transparent 1px) 54px 0 / 100% 100%,
+    linear-gradient(rgba(16, 36, 73, 0.08) 1px, transparent 1px),
+    rgba(255, 249, 223, 0.92);
+  background-size: 100% 100%, 100% 28px, auto;
+  box-shadow: inset 0 0 0 10px rgba(255, 252, 239, 0.34);
+  padding: 28px;
+}
+
+.cricket-stage::before {
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  color: rgba(16, 36, 73, 0.16);
+  content: "backbench cricket";
+  font-size: 18px;
+  font-weight: 800;
+  transform: rotate(2deg);
+}
+
+.cricket-hands {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.cricket-player-hand {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  gap: 8px;
+  color: #102449;
+  text-align: center;
+}
+
+.cricket-player-hand strong {
+  overflow: hidden;
+  max-width: 150px;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cricket-hand-label {
+  border: 1px dashed rgba(16, 36, 73, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 252, 239, 0.72);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.cricket-hand {
+  display: grid;
+  width: clamp(106px, 19vw, 150px);
+  height: clamp(106px, 19vw, 150px);
+  place-items: center;
+  line-height: 1;
+  transition:
+    transform 220ms ease;
+}
+
+.cricket-hand-image {
+  display: block;
+  width: 112%;
+  height: 112%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cricket-hand-image-left {
+  transform: scaleX(-1);
+}
+
+.cricket-player-hand-left .cricket-hand {
+  transform: rotate(8deg) translateX(12px);
+}
+
+.cricket-player-hand-right .cricket-hand {
+  transform: rotate(-8deg) translateX(-12px);
+}
+
+.cricket-hands-reveal .cricket-player-hand-left .cricket-hand {
+  animation: cricket-left-reveal 1.5s ease both;
+}
+
+.cricket-hands-reveal .cricket-player-hand-right .cricket-hand {
+  animation: cricket-right-reveal 1.5s ease both;
+}
+
+.cricket-hands-open .cricket-hand {
+  filter: saturate(1.12);
+}
+
+.cricket-vs {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 2px solid rgba(16, 36, 73, 0.5);
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #102449;
+  font-size: 16px;
+  font-weight: 900;
+  text-transform: uppercase;
+  transform: rotate(-5deg);
+}
+
+.cricket-popup {
+  position: absolute;
+  left: 50%;
+  z-index: 4;
+  display: grid;
+  width: min(calc(100% - 36px), 410px);
+  gap: 12px;
+  place-items: center;
+  border: 1px solid rgba(16, 36, 73, 0.3);
+  border-radius: 5px 8px 4px 7px;
+  background:
+    linear-gradient(rgba(16, 36, 73, 0.07) 1px, transparent 1px),
+    linear-gradient(rgba(255, 246, 216, 0.96), rgba(255, 246, 216, 0.96)),
+    #fff6d8;
+  background-size: 100% 26px, auto, auto;
+  box-shadow: 0 22px 56px rgba(50, 24, 6, 0.24);
+  padding: 18px;
+  text-align: center;
+  transform: translateX(-50%) rotate(-1deg);
+}
+
+.cricket-draw-popup {
+  top: 50%;
+  width: min(calc(100% - 26px), 460px);
+  padding: 18px 14px;
+  transform: translate(-50%, -50%) rotate(-1deg);
+}
+
+.cricket-start-popup {
+  top: 50%;
+  align-content: center;
+  width: min(calc(100% - 24px), 520px);
+  min-height: 260px;
+  gap: 8px;
+  padding: 42px 32px;
+  transform: translate(-50%, -50%) rotate(1deg);
+}
+
+.cricket-start-popup .draw-result {
+  font-size: 34px;
+}
+
+.cricket-draw-popup .eyebrow {
+  color: #102449;
+  font-size: 20px;
+}
+
+.cricket-draw-popup .hand-wheel {
+  width: min(100%, 340px);
+}
+
+.cricket-draw-popup .hand-button {
+  width: 76px;
+  height: 76px;
+}
+
+.cricket-draw-popup .wheel-center {
+  width: 90px;
+  height: 90px;
+}
+
+.cricket-wait-popup {
+  bottom: 24px;
+}
+
+.cricket-result-popup {
+  top: 28px;
+  width: min(calc(100% - 48px), 300px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  transform: translateX(-50%) rotate(1deg);
+}
+
+.cricket-result-popup .eyebrow {
+  display: none;
+}
+
 .hand-wheel {
   position: relative;
+  --hand-button-size: 86px;
+  --hand-button-inset: 5%;
+  --hand-button-side-inset: 8%;
   width: min(100%, 390px);
   aspect-ratio: 1;
   justify-self: center;
@@ -649,7 +855,8 @@ input {
 }
 
 .wheel-center span {
-  font-size: 42px;
+  font-size: 18px;
+  font-weight: 900;
   line-height: 1;
 }
 
@@ -657,51 +864,56 @@ input {
   position: absolute;
   z-index: 2;
   display: grid;
-  width: 86px;
-  height: 86px;
+  width: var(--hand-button-size);
+  height: var(--hand-button-size);
   place-items: center;
   border: 2px solid rgba(16, 36, 73, 0.62);
   border-radius: 999px;
   background: #fffbeb;
   color: #102449;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 900;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
     transform 160ms ease;
 }
 
+.hand-number {
+  font-size: 34px;
+  line-height: 1;
+}
+
 .hand-button:nth-of-type(1) {
-  top: 4%;
+  top: var(--hand-button-inset);
   left: 50%;
   transform: translate(-50%, 0);
 }
 
 .hand-button:nth-of-type(2) {
-  top: 25%;
-  right: 7%;
+  top: calc(33.333% - (var(--hand-button-size) / 2));
+  right: var(--hand-button-side-inset);
 }
 
 .hand-button:nth-of-type(3) {
-  right: 7%;
-  bottom: 25%;
+  top: calc(66.667% - (var(--hand-button-size) / 2));
+  right: var(--hand-button-side-inset);
 }
 
 .hand-button:nth-of-type(4) {
-  bottom: 4%;
+  bottom: var(--hand-button-inset);
   left: 50%;
   transform: translate(-50%, 0);
 }
 
 .hand-button:nth-of-type(5) {
-  bottom: 25%;
-  left: 7%;
+  top: calc(66.667% - (var(--hand-button-size) / 2));
+  left: var(--hand-button-side-inset);
 }
 
 .hand-button:nth-of-type(6) {
-  top: 25%;
-  left: 7%;
+  top: calc(33.333% - (var(--hand-button-size) / 2));
+  left: var(--hand-button-side-inset);
 }
 
 .hand-wheel-active .hand-button {
@@ -737,11 +949,6 @@ input {
   cursor: not-allowed;
   opacity: 0.65;
   animation: none;
-}
-
-.hand-icon {
-  font-size: 28px;
-  line-height: 1;
 }
 
 .result {
@@ -1046,7 +1253,7 @@ input {
 
 .number-grid {
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 6px;
   border: 1px solid rgba(16, 36, 73, 0.18);
   border-radius: 3px 7px 4px 6px;
@@ -1149,6 +1356,36 @@ input {
   }
 }
 
+@keyframes cricket-left-reveal {
+  0% {
+    transform: rotate(8deg) translateX(12px);
+  }
+
+  34% {
+    transform: rotate(-8deg) translateX(-26px) translateY(2px);
+  }
+
+  72%,
+  100% {
+    transform: rotate(4deg) translateX(18px);
+  }
+}
+
+@keyframes cricket-right-reveal {
+  0% {
+    transform: rotate(-8deg) translateX(-12px);
+  }
+
+  34% {
+    transform: rotate(8deg) translateX(26px) translateY(2px);
+  }
+
+  72%,
+  100% {
+    transform: rotate(-4deg) translateX(-18px);
+  }
+}
+
 @keyframes number-wrong-blink {
   0% {
     border-color: #dc2626;
@@ -1192,6 +1429,10 @@ input {
   .play-stage-panel {
     width: 100%;
     min-height: auto;
+  }
+
+  .cricket-stage {
+    min-height: 390px;
   }
 
   .play-meta-note .score-grid,
@@ -1307,6 +1548,113 @@ input {
   .wheel-center {
     width: 86px;
     height: 86px;
+  }
+
+  .cricket-stage {
+    min-height: 350px;
+    padding: 18px 10px;
+  }
+
+  .cricket-stage::before {
+    display: none;
+  }
+
+  .cricket-hands {
+    gap: 6px;
+  }
+
+  .cricket-hand {
+    width: 92px;
+    height: 92px;
+  }
+
+  .cricket-player-hand strong {
+    max-width: 86px;
+    font-size: 13px;
+  }
+
+  .cricket-hand-label {
+    padding: 3px 7px;
+    font-size: 10px;
+  }
+
+  .cricket-vs {
+    width: 38px;
+    height: 38px;
+    font-size: 12px;
+  }
+
+  .cricket-popup {
+    width: min(calc(100% - 16px), 360px);
+    padding: 12px;
+  }
+
+  .cricket-draw-popup .hand-wheel {
+    --hand-button-size: 52px;
+    --hand-button-inset: 4%;
+    --hand-button-side-inset: 6%;
+    width: min(100%, 312px);
+    padding: 4px;
+  }
+
+  .cricket-draw-popup .hand-button {
+    width: var(--hand-button-size);
+    height: var(--hand-button-size);
+  }
+
+  .cricket-draw-popup .hand-number {
+    font-size: 25px;
+  }
+
+  .cricket-draw-popup .eyebrow {
+    font-size: 18px;
+  }
+
+  .cricket-draw-popup .wheel-center {
+    width: 64px;
+    height: 64px;
+  }
+
+  .cricket-draw-popup .wheel-center span {
+    font-size: 13px;
+  }
+
+  .cricket-draw-popup .hand-button:nth-of-type(1) {
+    top: var(--hand-button-inset);
+  }
+
+  .cricket-draw-popup .hand-button:nth-of-type(2) {
+    top: calc(33.333% - (var(--hand-button-size) / 2));
+    right: var(--hand-button-side-inset);
+  }
+
+  .cricket-draw-popup .hand-button:nth-of-type(3) {
+    top: calc(66.667% - (var(--hand-button-size) / 2));
+    right: var(--hand-button-side-inset);
+    bottom: auto;
+  }
+
+  .cricket-draw-popup .hand-button:nth-of-type(4) {
+    bottom: var(--hand-button-inset);
+  }
+
+  .cricket-draw-popup .hand-button:nth-of-type(5) {
+    top: calc(66.667% - (var(--hand-button-size) / 2));
+    bottom: auto;
+    left: var(--hand-button-side-inset);
+  }
+
+  .cricket-draw-popup .hand-button:nth-of-type(6) {
+    top: calc(33.333% - (var(--hand-button-size) / 2));
+    left: var(--hand-button-side-inset);
+  }
+
+  .cricket-result-popup {
+    top: 16px;
+  }
+
+  .cricket-wait-popup {
+    bottom: 16px;
   }
 
   .dots-game-panel {

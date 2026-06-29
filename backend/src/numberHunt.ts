@@ -12,7 +12,7 @@ export type NumberHuntLastLock = {
 };
 
 export type NumberHuntState = {
-  maxNumber: 100;
+  maxNumber: 64;
   players: [NumberHuntPlayer, NumberHuntPlayer];
   currentTarget: number;
   scores: [number, number];
@@ -23,7 +23,7 @@ export type NumberHuntState = {
   disconnectedPlayerIndex: 0 | 1 | null;
 };
 
-const MAX_NUMBER = 100;
+const MAX_NUMBER = 64;
 
 function getPlayerIndex(state: NumberHuntState, socketId: string) {
   const playerIndex = state.players.findIndex(
